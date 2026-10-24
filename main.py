@@ -137,6 +137,54 @@ def count_genre_matches(words):
     return counts
 
 
+def calculate_percentages(counts):
+    """Turn genre counts into percentages (one decimal) that add up to exactly 100."""
+    total = sum(counts.values())
+    if total == 0:
+        # No keywords found at all: every genre is 0.0 and we avoid dividing by zero.
+        percentages = {}
+        for genre in counts:
+            percentages[genre] = 0.0
+        return percentages
+
+    # Work in tenths of a percent (whole numbers), because whole numbers add up exactly.
+    # 100.0% is the same as 1000 tenths.
+    tenths = {}
+    leftovers = {}
+    for genre in counts:
+        tenths[genre] = counts[genre] * 1000 // total      # // drops the decimal part
+        leftovers[genre] = counts[genre] * 1000 % total    # % is what was dropped
+
+    # Dropping decimals leaves us a few tenths short of 1000.
+    # Give one extra tenth each to the genres that lost the most.
+    missing = 1000 - sum(tenths.values())
+    for genre in sorted(leftovers, key=leftovers.get, reverse=True)[:missing]:
+        tenths[genre] = tenths[genre] + 1
+
+    percentages = {}
+    for genre in tenths:
+        percentages[genre] = tenths[genre] / 10
+    return percentages
+
+
+def percent_of(pair):
+    """Given a (genre, percent) pair, return the percent. sorted() uses this to rank the genres."""
+    return pair[1]
+
+
+def print_genre_report(counts, percentages):
+    """Print every genre from the biggest percentage to the smallest, with a small bar."""
+    print("")
+    print("Genres")
+    ranked = sorted(percentages.items(), key=percent_of, reverse=True)
+    for genre, percent in ranked:
+        bar = "#" * int(percent / 3.5)
+        print(f"  {genre:<16} {percent:5.1f}%  {bar}")
+    print(f"Genre keywords found: {sum(counts.values())}")
+    if sum(counts.values()) == 0:
+        print("No genre keywords were found, so every genre shows 0.0%.")
+
+
 def main():
     path = input("Type the script file name (example: sample_scripts/broken_short.txt): ").strip()
     text = load_script(path)
@@ -150,9 +198,8 @@ def main():
     print(f"Clean words: {len(words)}")
 
     counts = count_genre_matches(words)
-    print("Keyword matches per genre:")
-    for genre in counts:
-        print(f"  {genre:<16} {counts[genre]}")
+    percentages = calculate_percentages(counts)
+    print_genre_report(counts, percentages)
 
 
 if __name__ == "__main__":
