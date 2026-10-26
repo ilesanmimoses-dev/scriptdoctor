@@ -4,6 +4,9 @@ import unicodedata
 # so we treat each hooked letter and its plain version as the same letter.
 HOOKED_LETTERS = {"ɓ": "b", "ɗ": "d", "ƙ": "k", "ƴ": "y"}
 
+# A script with fewer words than this is too short to judge (error rule 1).
+MIN_WORDS = 300
+
 # STARTER word lists. One list per genre and per language.
 # Rules: a word belongs to ONE genre only, and everyday words (like "so") are never used.
 # The Yoruba, Hausa, Igbo and Pidgin lists are small on purpose.
@@ -185,6 +188,93 @@ def print_genre_report(counts, percentages):
         print("No genre keywords were found, so every genre shows 0.0%.")
 
 
+def is_scene_heading(line):
+    """True if the line is a scene heading such as 'INT. KITCHEN - DAY' or 'EXT. STREET - NIGHT'."""
+    return line.strip().upper().startswith(("INT.", "EXT."))
+
+
+def is_character_cue(line):
+    """True if the line looks like a character name above a speech, such as 'JOHN'."""
+    text = line.strip()
+    if text == "" or is_scene_heading(text):
+        return False
+    # A name is written in capital letters. 'text == text.lower()' catches lines with no letters at all.
+    if text != text.upper() or text == text.lower():
+        return False
+    # Lines like 'FADE OUT.' or 'CUT TO:' are transitions, not names.
+    if text.endswith(".") or text.endswith(":"):
+        return False
+    # Names are short: JOHN, MARY ANN, DR. OKAFOR (V.O.)
+    return len(text.split()) <= 4
+
+
+def has_dialogue(lines):
+    """True if at least one character name is followed straight away by a spoken line."""
+    for i in range(len(lines) - 1):
+        next_line = lines[i + 1]
+        if is_character_cue(lines[i]) and next_line.strip() != "" and not is_scene_heading(next_line):
+            return True
+    return False
+
+
+def make_error(line_number, severity, message, fix):
+    """Pack one error into a small dictionary. line_number is None when it is about the whole script."""
+    return {"line": line_number, "severity": severity, "message": message, "fix": fix}
+
+
+def find_critical_errors(lines):
+    """Apply the three CRITICAL rules: too short, no dialogue, no scene headings."""
+    errors = []
+
+    word_count = sum([len(line.split()) for line in lines])
+    if word_count < MIN_WORDS:
+        errors.append(make_error(
+            None, "CRITICAL",
+            f"Too short ({word_count} words, the minimum is {MIN_WORDS})",
+            "Write more scenes and dialogue until the script passes 300 words"))
+
+    if not has_dialogue(lines):
+        errors.append(make_error(
+            None, "CRITICAL",
+            "No dialogue found (no character name followed by a spoken line)",
+            "Put each character name in CAPITALS on its own line, with the speech on the next line"))
+
+    scene_headings = [line for line in lines if is_scene_heading(line)]
+    if len(scene_headings) == 0:
+        errors.append(make_error(
+            None, "CRITICAL",
+            "No scene headings (no line starting with INT. or EXT.)",
+            "Start every scene with a heading such as INT. KITCHEN - DAY"))
+
+    return errors
+
+
+def find_errors(lines):
+    """Run every error rule and return one list of errors. More rules join in later steps."""
+    errors = []
+    errors.extend(find_critical_errors(lines))
+    return errors
+
+
+def print_errors(errors):
+    """Print how many errors of each severity were found, then each error with its fix."""
+    critical = len([error for error in errors if error["severity"] == "CRITICAL"])
+    moderate = len([error for error in errors if error["severity"] == "MODERATE"])
+    minor = len([error for error in errors if error["severity"] == "MINOR"])
+
+    print("")
+    print(f"Errors found: {critical} CRITICAL, {moderate} MODERATE, {minor} MINOR")
+    if len(errors) == 0:
+        print("  No errors found.")
+    for error in errors:
+        if error["line"] is None:
+            where = "Script"
+        else:
+            where = f"Line {error['line']}"
+        print(f"  [{error['severity']}] {where}: {error['message']}")
+        print(f"      Fix: {error['fix']}")
+
+
 def main():
     path = input("Type the script file name (example: sample_scripts/broken_short.txt): ").strip()
     text = load_script(path)
@@ -200,6 +290,9 @@ def main():
     counts = count_genre_matches(words)
     percentages = calculate_percentages(counts)
     print_genre_report(counts, percentages)
+
+    errors = find_errors(text.splitlines())
+    print_errors(errors)
 
 
 if __name__ == "__main__":
