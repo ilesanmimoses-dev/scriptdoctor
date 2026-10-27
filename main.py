@@ -7,6 +7,16 @@ HOOKED_LETTERS = {"ɓ": "b", "ɗ": "d", "ƙ": "k", "ƴ": "y"}
 # A script with fewer words than this is too short to judge (error rule 1).
 MIN_WORDS = 300
 
+# Words that tell us the time of day in a scene heading (error rule: incomplete heading).
+TIME_OF_DAY = ["DAY", "NIGHT", "MORNING", "AFTERNOON", "EVENING", "DAWN", "DUSK",
+               "SUNRISE", "SUNSET", "MIDNIGHT", "NOON", "LATER", "CONTINUOUS"]
+
+# A speech longer than this many words is hard to read and hard to act (error rule: very long speech).
+MAX_SPEECH_WORDS = 80
+
+# Lines that finish a script. They are not character names.
+END_MARKERS = ["THE END", "FADE OUT", "FADE TO BLACK", "CUT TO BLACK"]
+
 # STARTER word lists. One list per genre and per language.
 # Rules: a word belongs to ONE genre only, and everyday words (like "so") are never used.
 # The Yoruba, Hausa, Igbo and Pidgin lists are small on purpose.
@@ -193,10 +203,24 @@ def is_scene_heading(line):
     return line.strip().upper().startswith(("INT.", "EXT."))
 
 
+def is_ending_marker(line):
+    """True if the line is an ending such as 'THE END' or 'FADE OUT.'"""
+    return line.strip().upper().rstrip(".:!") in END_MARKERS
+
+
+def heading_has_time(line):
+    """True if a scene heading says when it happens, for example 'INT. KITCHEN - NIGHT'."""
+    cleaned = line.upper()
+    for symbol in ".,-–—/()":
+        cleaned = cleaned.replace(symbol, " ")
+    found = [word for word in cleaned.split() if word in TIME_OF_DAY]
+    return len(found) > 0
+
+
 def is_character_cue(line):
     """True if the line looks like a character name above a speech, such as 'JOHN'."""
     text = line.strip()
-    if text == "" or is_scene_heading(text):
+    if text == "" or is_scene_heading(text) or is_ending_marker(text):
         return False
     # A name is written in capital letters. 'text == text.lower()' catches lines with no letters at all.
     if text != text.upper() or text == text.lower():
@@ -249,10 +273,52 @@ def find_critical_errors(lines):
     return errors
 
 
+def get_speech(lines, cue_index):
+    """Return the lines spoken right under a character name. A blank line or a scene heading ends the speech."""
+    speech = []
+    for line in lines[cue_index + 1:]:
+        if line.strip() == "" or is_scene_heading(line):
+            break
+        speech.append(line)
+    return speech
+
+
+def find_moderate_errors(lines):
+    """Apply the MODERATE rules that point at a line: incomplete heading, name with no speech, very long speech."""
+    errors = []
+
+    for i, line in enumerate(lines):
+        line_number = i + 1    # computers count from 0, people count from 1
+
+        if is_scene_heading(line) and not heading_has_time(line):
+            errors.append(make_error(
+                line_number, "MODERATE",
+                f"Scene heading has no time of day: {line.strip()}",
+                "Add DAY, NIGHT or similar, for example INT. KITCHEN - DAY"))
+
+        if is_character_cue(line):
+            speech = get_speech(lines, i)
+            if len(speech) == 0:
+                errors.append(make_error(
+                    line_number, "MODERATE",
+                    f"{line.strip()} has no spoken line",
+                    "Write the speech on the line right under the name, or remove the name"))
+            else:
+                speech_words = sum([len(speech_line.split()) for speech_line in speech])
+                if speech_words > MAX_SPEECH_WORDS:
+                    errors.append(make_error(
+                        line_number, "MODERATE",
+                        f"Speech runs over {MAX_SPEECH_WORDS} words ({line.strip()} speaks {speech_words} words)",
+                        "Break the speech into shorter parts with action lines or another character's reply"))
+
+    return errors
+
+
 def find_errors(lines):
     """Run every error rule and return one list of errors. More rules join in later steps."""
     errors = []
     errors.extend(find_critical_errors(lines))
+    errors.extend(find_moderate_errors(lines))
     return errors
 
 
@@ -297,4 +363,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
