@@ -205,7 +205,7 @@ def is_scene_heading(line):
 
 def is_ending_marker(line):
     """True if the line is an ending such as 'THE END' or 'FADE OUT.'"""
-    return line.strip().upper().rstrip(".:!") in END_MARKERS
+    return line.strip().upper().strip(" .:!-*~") in END_MARKERS
 
 
 def heading_has_time(line):
@@ -284,7 +284,7 @@ def get_speech(lines, cue_index):
 
 
 def find_moderate_errors(lines):
-    """Apply the MODERATE rules that point at a line: incomplete heading, name with no speech, very long speech."""
+    """Apply all five MODERATE rules: incomplete heading, name with no speech, very long speech, no ending, similar names."""
     errors = []
 
     for i, line in enumerate(lines):
@@ -311,6 +311,80 @@ def find_moderate_errors(lines):
                         f"Speech runs over {MAX_SPEECH_WORDS} words ({line.strip()} speaks {speech_words} words)",
                         "Break the speech into shorter parts with action lines or another character's reply"))
 
+    errors.extend(find_ending_errors(lines))
+    errors.extend(find_name_errors(lines))
+    return errors
+
+
+def has_ending_marker(non_blank_lines):
+    """True if one of the last 5 lines of the script is an ending such as 'THE END' or 'FADE OUT.'"""
+    last_lines = non_blank_lines[-5:]
+    found = [line for line in last_lines if is_ending_marker(line)]
+    return len(found) > 0
+
+
+def find_ending_errors(lines):
+    """Apply the rule: a script should finish with an ending marker."""
+    errors = []
+    non_blank = [line for line in lines if line.strip() != ""]
+    if len(non_blank) > 0 and not has_ending_marker(non_blank):
+        errors.append(make_error(
+            None, "MODERATE",
+            "No ending marker (no FADE OUT, THE END or similar near the end)",
+            "Finish the script with a line such as FADE OUT. or THE END"))
+    return errors
+
+
+def get_character_names(lines):
+    """Return every character name with the line where it first appears."""
+    names = {}
+    for i, line in enumerate(lines):
+        if is_character_cue(line):
+            name = line.split("(")[0].strip()    # 'JOHN (V.O.)' becomes 'JOHN'
+            if name != "" and name not in names:
+                names[name] = i + 1
+    return names
+
+
+def names_look_alike(first, second):
+    """True if two different names are one letter apart, such as JOHN and JON."""
+    if first == second or len(first) < 3 or len(second) < 3:
+        return False
+
+    if len(first) == len(second):
+        different_places = 0
+        for i in range(len(first)):
+            if first[i] != second[i]:
+                different_places = different_places + 1
+        return different_places == 1
+
+    if abs(len(first) - len(second)) == 1:
+        if len(first) > len(second):
+            longer, shorter = first, second
+        else:
+            longer, shorter = second, first
+        # Try removing each letter of the longer name. If it becomes the shorter name, they look alike.
+        for i in range(len(longer)):
+            if longer[:i] + longer[i + 1:] == shorter:
+                return True
+
+    return False
+
+
+def find_name_errors(lines):
+    """Apply the rule: the same character should always be spelled the same way."""
+    errors = []
+    names = get_character_names(lines)
+    name_list = list(names)
+    for i in range(len(name_list)):
+        for j in range(i + 1, len(name_list)):
+            earlier = name_list[i]
+            later = name_list[j]
+            if names_look_alike(earlier, later):
+                errors.append(make_error(
+                    names[later], "MODERATE",
+                    f"Name {later} looks like a different spelling of {earlier} (first seen on line {names[earlier]})",
+                    "Use one spelling for each character. If they are two different people, give them names that look less alike"))
     return errors
 
 
@@ -363,3 +437,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
