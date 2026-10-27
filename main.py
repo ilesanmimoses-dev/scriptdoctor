@@ -543,31 +543,66 @@ def calculate_score(errors):
     return score, rating_tier(score)
 
 
+def choose_comment(percentages, score):
+    """Pick the closing comment based on the result."""
+    ranked = sorted(percentages.items(), key=percent_of, reverse=True)
+    leader, lead_percent = ranked[0]
+    second_percent = ranked[1][1] if len(ranked) > 1 else 0.0
+
+    if score < 40:
+        return ("Interesting: every great writer started rough. Fix the CRITICAL "
+                "problems first and run the script again — you will see the score jump.")
+
+    if lead_percent >= 40 and (lead_percent - second_percent) >= 15:
+        fun_facts = {
+            "Action": "Action scripts live on verbs — keep the chase moving.",
+            "Comedy": "Comedy is the hardest genre to score; laughter is subjective.",
+            "Romance": "Romance lives on small gestures, not big speeches.",
+            "Emotional/Drama": "Drama works best when the quiet moments carry the weight.",
+            "Horror": "Horror is about what you don't show as much as what you do.",
+            "Fiction/Fantasy": "Fantasy needs its rules clear before the magic lands.",
+            "Erotic": "Tension, not explicitness, is what makes this genre work.",
+        }
+        return f"Interesting: {leader} leads clearly here ({lead_percent:.1f}%). {fun_facts[leader]}"
+
+    return ("Interesting: your script blends several genres, and most great films "
+            "do exactly that!")
+
+
+def print_report(counts, percentages, errors, score, tier, comment):
+    """Print the full report in the PRD's sample layout."""
+    print("=" * 47)
+    print("SCRIPTSCOPE REPORT".center(47))
+    print("=" * 47)
+
+    print_genre_report(counts, percentages)
+
+    print_errors(errors)
+
+    tier_colour = TIER_COLOURS.get(tier, "")
+    print("")
+    print(f"Score: {score} / 100   Rating: {tier_colour}{tier}{RESET}")
+
+    print("-" * 47)
+    print(comment)
+    
+
 def main():
     path = input("Type the script file name (example: sample_scripts/broken_short.txt): ").strip()
     text = load_script(path)
     if text is None:
         return
-    print(f"Loaded: {path}")
-    print(f"Lines: {len(text.splitlines())}")
-    print(f"Words: {len(text.split())}")
 
     words = clean_and_split(text)
-    print(f"Clean words: {len(words)}")
-
     counts = count_genre_matches(words)
     percentages = calculate_percentages(counts)
-    print_genre_report(counts, percentages)
 
     errors = find_errors(text.splitlines())
-    print_errors(errors)
-
     score, tier = calculate_score(errors)
-    tier_colour = TIER_COLOURS.get(tier, "")
-    print("")
-    print(f"Score: {score} / 100   Rating: {tier_colour}{tier}{RESET}")
+    comment = choose_comment(percentages, score)
+
+    print_report(counts, percentages, errors, score, tier, comment)
 
 
 if __name__ == "__main__":
-    main()
-    
+    main()    
