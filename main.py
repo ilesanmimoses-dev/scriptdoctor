@@ -1,5 +1,11 @@
 import unicodedata
 
+# F4 is now COMPLETE: all 11 error rules from the PRD are implemented.
+#   CRITICAL (3): too short, no dialogue, no scene headings
+#   MODERATE (5): incomplete heading, cue with no speech, very long speech,
+#                 no ending marker, inconsistent character name
+#   MINOR    (3): repeated word, extra spaces, sentence starts lowercase
+
 # Hausa hooked letters are often typed as plain b, d, k and y,
 # so we treat each hooked letter and its plain version as the same letter.
 HOOKED_LETTERS = {"ɓ": "b", "ɗ": "d", "ƙ": "k", "ƴ": "y"}
@@ -232,11 +238,47 @@ def is_character_cue(line):
     return len(text.split()) <= 4
 
 
+def looks_like_action_phrase(line):
+    """True if an ALL-CAPS line reads like an action beat, not a character name.
+    A real character cue is usually one or two words (JOHN, MARY ANN, THE STRANGER).
+    Three or more ALL-CAPS words are far more likely to be action beats
+    ('THE CROWD CHEERS', 'A CAR EXPLODES'). Skipping them here is deliberate:
+    missing a rare 3-word cue is a small false negative, but treating action
+    as a cue creates a false positive that hides the 'No dialogue' CRITICAL error."""
+    words = line.strip().split()
+    return len(words) >= 3
+
+
+def looks_like_speech(line):
+    """True if a line reads like spoken dialogue, not an action line, a heading,
+    a parenthetical stage direction, or another character cue."""
+    text = line.strip()
+    if text == "":
+        return False
+    if is_scene_heading(text) or is_ending_marker(text):
+        return False
+    # A parenthetical like '(whispering)' is a stage direction, not speech.
+    if text.startswith("(") and text.endswith(")"):
+        return False
+    # If the next line is itself a cue, the previous character had no speech.
+    if is_character_cue(text) and not looks_like_action_phrase(text):
+        return False
+    # All-caps lines are usually action beats; only long all-caps could be speech.
+    if text == text.upper() and len(text.split()) <= 5:
+        return False
+    return True
+
+
 def has_dialogue(lines):
-    """True if at least one character name is followed straight away by a spoken line."""
+    """True if at least one real character name is followed by actual speech.
+    All-caps action lines like 'THE CROWD CHEERS' are NOT treated as character cues."""
     for i in range(len(lines) - 1):
-        next_line = lines[i + 1]
-        if is_character_cue(lines[i]) and next_line.strip() != "" and not is_scene_heading(next_line):
+        cue = lines[i]
+        if not is_character_cue(cue):
+            continue
+        if looks_like_action_phrase(cue):
+            continue
+        if looks_like_speech(lines[i + 1]):
             return True
     return False
 
@@ -388,11 +430,76 @@ def find_name_errors(lines):
     return errors
 
 
+def find_repeated_word_errors(lines):
+    """Apply the rule: the same word twice in a row such as 'the the'."""
+    errors = []
+    for i, line in enumerate(lines):
+        tokens = line.lower().split()
+        for a, b in zip(tokens, tokens[1:]):
+            if a != b:
+                continue
+            clean = a.strip(".,;:!?\"'()[]-")
+            if clean.isalpha():
+                errors.append(make_error(
+                    i + 1, "MINOR",
+                    f'Repeated word "{a} {b}"',
+                    "Remove the duplicate word"))
+                break    # one error per line is enough
+    return errors
+
+
+def find_extra_space_errors(lines):
+    """Apply the rule: two or more spaces in a row inside a line.
+    Leading and trailing whitespace are skipped on purpose because screenplays
+    indent cues and dialogue as part of the format."""
+    errors = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if "  " in stripped:
+            errors.append(make_error(
+                i + 1, "MINOR",
+                "Extra spaces in this line",
+                "Use a single space between words"))
+    return errors
+
+
+def find_lowercase_start_errors(lines):
+    """Apply the rule: a new line begins with a small letter."""
+    errors = []
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped == "":
+            continue
+        # Headings, ending markers and parentheticals have their own rules.
+        if is_scene_heading(line) or is_ending_marker(line):
+            continue
+        if stripped.startswith("("):
+            continue
+        first = stripped[0]
+        if first.isalpha() and first.islower():
+            preview = stripped[:30] + ("..." if len(stripped) > 30 else "")
+            errors.append(make_error(
+                i + 1, "MINOR",
+                f'Line starts in lowercase: "{preview}"',
+                "Start the line with a capital letter"))
+    return errors
+
+
+def find_minor_errors(lines):
+    """Apply all three MINOR rules: repeated word, extra spaces, sentence starts lowercase."""
+    errors = []
+    errors.extend(find_repeated_word_errors(lines))
+    errors.extend(find_extra_space_errors(lines))
+    errors.extend(find_lowercase_start_errors(lines))
+    return errors
+
+
 def find_errors(lines):
-    """Run every error rule and return one list of errors. More rules join in later steps."""
+    """Run every error rule and return one list of errors. All 11 rules are now in."""
     errors = []
     errors.extend(find_critical_errors(lines))
     errors.extend(find_moderate_errors(lines))
+    errors.extend(find_minor_errors(lines))
     return errors
 
 
@@ -437,4 +544,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
