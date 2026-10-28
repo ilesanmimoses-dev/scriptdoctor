@@ -10,6 +10,8 @@ import unicodedata
 # Step 14: count_speeches(), dialogue_ratio(), estimate_length()
 # Step 15: explain_simply()           - plain-words explanation (facts only)
 # Step 16: find_props_and_costumes()  - named items only, never invented
+# Step 17a: ask_yes_no(), build_schedule(), print_schedule()
+#           Basic per-location schedule. Fixed 5 pages/day. No preferences yet.
 
 HOOKED_LETTERS = {"ɓ": "b", "ɗ": "d", "ƙ": "k", "ƴ": "y"}
 MIN_WORDS = 300
@@ -18,31 +20,21 @@ TIME_OF_DAY = ["DAY", "NIGHT", "MORNING", "AFTERNOON", "EVENING", "DAWN", "DUSK"
 MAX_SPEECH_WORDS = 80
 END_MARKERS = ["THE END", "FADE OUT", "FADE TO BLACK", "CUT TO BLACK"]
 WORDS_PER_PAGE = 250
+PAGES_PER_SHOOT_DAY = 5.0
 
-# ---- Props and costumes (step 16) -----------------------------------------
-# Only items that are literally named in the script are reported.
-# These lists are deliberately small and can grow. A word belongs to ONE
-# category only (props OR costumes), so there is no overlap.
-# Includes Nigerian-context items because ScriptScope targets Nigerian films.
 PROPS = [
-    # PRD examples
     "gun", "candle", "chain", "phone",
-    # Common everyday props
     "knife", "letter", "book", "bag", "money", "key", "ring", "mirror",
     "bottle", "cup", "chair", "table", "door", "window", "car", "bicycle",
     "umbrella", "clock", "photograph",
-    # Nigerian context
     "calabash", "kola", "pot", "mat", "broom",
 ]
 
 COSTUMES = [
-    # PRD examples
     "uniform", "dress", "suit",
-    # Common costume words
     "shirt", "trousers", "hat", "shoe", "coat", "jacket",
     "gown", "skirt", "tie", "glasses", "watch", "scarf", "boots",
     "veil", "robe", "apron", "helmet",
-    # Nigerian context
     "wrapper", "gele", "agbada", "kaftan", "babariga",
 ]
 
@@ -146,8 +138,6 @@ def normalize_word(word):
 
 
 def singular_fallback(word):
-    """If 'word' looks like a simple plural (ends in 's'), return the singular form too.
-    Used by props/costumes matching so 'bags' matches 'bag'."""
     if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
         return word[:-1]
     return word
@@ -620,27 +610,16 @@ def explain_simply(words, language, scenes, speech_counts, percentages, estimate
     return sentences
 
 
-# ---- Step 16: props and costumes ------------------------------------------
-
 def find_props_and_costumes(scenes):
-    """Find props and costumes that are literally named in the script.
-
-    Returns {"props": {item: [scene numbers]}, "costumes": {item: [scene numbers]}}.
-    A script with no scenes returns empty dicts. Items are never invented.
-    Plurals match their singular (bags -> bag) via singular_fallback().
-    """
     props_set = {normalize_word(w) for w in PROPS}
     costumes_set = {normalize_word(w) for w in COSTUMES}
-
     found_props = {}
     found_costumes = {}
-
     for n, scene in enumerate(scenes, start=1):
         body_words = clean_and_split("\n".join(scene["lines"]))
         for raw in body_words:
             word = normalize_word(raw)
             candidate = singular_fallback(word)
-            # Try both the word itself and its singular form.
             for test_word in (word, candidate):
                 if test_word in props_set:
                     found_props.setdefault(test_word, []).append(n)
@@ -648,39 +627,76 @@ def find_props_and_costumes(scenes):
                 if test_word in costumes_set:
                     found_costumes.setdefault(test_word, []).append(n)
                     break
-
-    # Deduplicate scene numbers (same prop twice in one scene -> one entry).
     for item in found_props:
         found_props[item] = sorted(set(found_props[item]))
     for item in found_costumes:
         found_costumes[item] = sorted(set(found_costumes[item]))
-
     return {"props": found_props, "costumes": found_costumes}
 
 
-def print_props_and_costumes(items):
-    props = items["props"]
-    costumes = items["costumes"]
+# ---- Step 17a: schedule estimate ------------------------------------------
 
-    print("")
-    print(f"Props named ({len(props)}):")
-    if not props:
-        print("  No props from the word list were named in the script.")
-    else:
-        for name in sorted(props):
-            scene_list = ", ".join(str(s) for s in props[name])
-            plural = "s" if len(props[name]) > 1 else ""
-            print(f"  {name:<20} scene{plural} {scene_list}")
+def ask_yes_no(question):
+    """Ask a yes/no question. True for 'y' or 'yes', False for anything else."""
+    answer = input(question + " (yes/no): ").strip().lower()
+    return answer in ("y", "yes")
 
+
+def build_schedule(scenes, pages_per_day=5.0):
+    """Group scenes by location and estimate pages and shoot days per location.
+
+    Everything is an ESTIMATE, never a production plan.
+    Returns {"by_location": [...], "total_pages": X, "total_days": Y}.
+    """
+    if not scenes:
+        return {"by_location": [], "total_pages": 0.0, "total_days": 0.0}
+
+    groups = {}
+    for scene in scenes:
+        loc = scene["location"]
+        if loc not in groups:
+            groups[loc] = {"scenes": 0, "words": 0}
+        groups[loc]["scenes"] += 1
+        groups[loc]["words"] += scene["word_count"]
+
+    by_location = []
+    total_pages = 0.0
+    total_days = 0.0
+    for loc, info in groups.items():
+        pages = round(info["words"] / WORDS_PER_PAGE, 1)
+        days = round(pages / pages_per_day, 1) if pages_per_day > 0 else 0.0
+        by_location.append({
+            "location": loc,
+            "scenes": info["scenes"],
+            "words": info["words"],
+            "pages": pages,
+            "days": days,
+        })
+        total_pages += pages
+        total_days += days
+
+    by_location.sort(key=lambda x: x["days"], reverse=True)
+    return {
+        "by_location": by_location,
+        "total_pages": round(total_pages, 1),
+        "total_days": round(total_days, 1),
+    }
+
+
+def print_schedule(schedule, pages_per_day=5.0):
+    """Print the schedule estimate. Always labelled as an estimate, never a fact."""
     print("")
-    print(f"Costumes named ({len(costumes)}):")
-    if not costumes:
-        print("  No costumes from the word list were named in the script.")
-    else:
-        for name in sorted(costumes):
-            scene_list = ", ".join(str(s) for s in costumes[name])
-            plural = "s" if len(costumes[name]) > 1 else ""
-            print(f"  {name:<20} scene{plural} {scene_list}")
+    print(f"Schedule estimate (rough guide only, based on {pages_per_day} pages per day):")
+    if not schedule["by_location"]:
+        print("  No scenes to schedule.")
+        return
+    for entry in schedule["by_location"]:
+        scene_word = "scene" if entry["scenes"] == 1 else "scenes"
+        print(f"  {entry['location']:<18} {entry['scenes']} {scene_word}   "
+              f"{entry['words']} words   ~{entry['pages']} pages   ~{entry['days']} days")
+    print("")
+    day_word = "day" if schedule["total_days"] == 1.0 else "days"
+    print(f"  Total: ~{schedule['total_pages']} pages, ~{schedule['total_days']} {day_word}")
 
 
 # ---- Print helpers --------------------------------------------------------
@@ -732,6 +748,31 @@ def print_length_estimate(estimate):
     print(f"Estimated length: ~{estimate['pages']} pages  (~{estimate['minutes']} minutes)")
 
 
+def print_props_and_costumes(items):
+    props = items["props"]
+    costumes = items["costumes"]
+
+    print("")
+    print(f"Props named ({len(props)}):")
+    if not props:
+        print("  No props from the word list were named in the script.")
+    else:
+        for name in sorted(props):
+            scene_list = ", ".join(str(s) for s in props[name])
+            plural = "s" if len(props[name]) > 1 else ""
+            print(f"  {name:<20} scene{plural} {scene_list}")
+
+    print("")
+    print(f"Costumes named ({len(costumes)}):")
+    if not costumes:
+        print("  No costumes from the word list were named in the script.")
+    else:
+        for name in sorted(costumes):
+            scene_list = ", ".join(str(s) for s in costumes[name])
+            plural = "s" if len(costumes[name]) > 1 else ""
+            print(f"  {name:<20} scene{plural} {scene_list}")
+
+
 def print_report(counts, percentages, errors, score, tier, comment,
                  scenes, language, speech_counts, ratio, estimate, explanation,
                  items):
@@ -775,6 +816,10 @@ def main():
     items = find_props_and_costumes(scenes)
     print_report(counts, percentages, errors, score, tier, comment,
                  scenes, language, speech_counts, ratio, estimate, explanation, items)
+
+    if ask_yes_no("Would you also like a schedule estimate?"):
+        schedule = build_schedule(scenes, pages_per_day=PAGES_PER_SHOOT_DAY)
+        print_schedule(schedule, pages_per_day=PAGES_PER_SHOOT_DAY)
 
 
 if __name__ == "__main__":
