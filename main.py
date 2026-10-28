@@ -1,38 +1,25 @@
 import unicodedata
 
-# F4 is COMPLETE: all 11 error rules from the PRD are implemented.
-#   CRITICAL (3): too short, no dialogue, no scene headings
-#   MODERATE (5): incomplete heading, cue with no speech, very long speech,
-#                 no ending marker, inconsistent character name
-#   MINOR    (3): repeated word, extra spaces, sentence starts lowercase
-#
-# F5 (scoring) is added: calculate_score() and rating_tier().
-# F6 (report + closing comment): print_report() and choose_comment().
+# CRITICAL (3): too short, no dialogue, no scene headings
+# MODERATE (5): incomplete heading, cue with no speech, very long speech,
+#               no ending marker, inconsistent character name
+# MINOR    (3): repeated word, extra spaces, sentence starts lowercase
 #
 # Step 12: parse_scenes() splits the script at each INT./EXT. heading.
 # Step 13: detect_language() guesses the main language from common words.
+# Step 14: count_speeches(), dialogue_ratio(), estimate_length().
 
-# Hausa hooked letters are often typed as plain b, d, k and y,
-# so we treat each hooked letter and its plain version as the same letter.
 HOOKED_LETTERS = {"ɓ": "b", "ɗ": "d", "ƙ": "k", "ƴ": "y"}
-
-# A script with fewer words than this is too short to judge (error rule 1).
 MIN_WORDS = 300
-
-# Words that tell us the time of day in a scene heading (error rule: incomplete heading).
 TIME_OF_DAY = ["DAY", "NIGHT", "MORNING", "AFTERNOON", "EVENING", "DAWN", "DUSK",
                "SUNRISE", "SUNSET", "MIDNIGHT", "NOON", "LATER", "CONTINUOUS"]
-
-# A speech longer than this many words is hard to read and hard to act (error rule: very long speech).
 MAX_SPEECH_WORDS = 80
-
-# Lines that finish a script. They are not character names.
 END_MARKERS = ["THE END", "FADE OUT", "FADE TO BLACK", "CUT TO BLACK"]
 
-# STARTER word lists. One list per genre and per language.
-# Rules: a word belongs to ONE genre only, and everyday words (like "so") are never used.
-# The Yoruba, Hausa, Igbo and Pidgin lists are small on purpose.
-# Fluent speakers must review them before we trust the results.
+# Screenwriting rule of thumb: about 250 words per screenplay page,
+# and about 1 page = 1 minute of screen time.
+WORDS_PER_PAGE = 250
+
 GENRE_KEYWORDS = {
     "Action": {
         "English": ["gun", "guns", "gunfire", "explosion", "explode", "fight", "chase",
@@ -93,17 +80,12 @@ GENRE_KEYWORDS = {
     },
 }
 
-# ---- Colour (ANSI, no extra libraries) -----------------------------------
-# Colour is a signal, never the only signal. Every colour is paired with a
-# plain text label so the report stays readable for colour-blind users.
-# Colours are always on. If you redirect output to a file you will see the
-# raw ANSI codes, so print to the terminal when you want the colours.
 RESET            = "\033[0m"
-COLOUR_CRITICAL  = "\033[91m"    # red
-COLOUR_MODERATE  = "\033[93m"    # yellow
-COLOUR_MINOR     = "\033[96m"    # cyan
-COLOUR_EXCELLENT = "\033[92m"    # green
-COLOUR_PERFECT   = "\033[1;92m"  # bold green
+COLOUR_CRITICAL  = "\033[91m"
+COLOUR_MODERATE  = "\033[93m"
+COLOUR_MINOR     = "\033[96m"
+COLOUR_EXCELLENT = "\033[92m"
+COLOUR_PERFECT   = "\033[1;92m"
 
 SEVERITY_COLOURS = {
     "CRITICAL": COLOUR_CRITICAL,
@@ -119,9 +101,6 @@ TIER_COLOURS = {
     "PERFECT":   COLOUR_PERFECT,
 }
 
-# ---- Language detection word lists (step 13) -----------------------------
-# Very common words per language, used only to guess the main language.
-# These are NOT genre keywords.
 LANGUAGE_COMMON_WORDS = {
     "English": ["the", "and", "you", "is", "are", "what", "this", "that", "have",
                 "not", "with", "for", "but", "was", "were", "will", "from", "they"],
@@ -137,7 +116,6 @@ LANGUAGE_COMMON_WORDS = {
 
 
 def load_script(path):
-    """Read a script file and return its text, or None if the file is missing."""
     try:
         with open(path, "r", encoding="utf-8") as file:
             text = file.read()
@@ -148,8 +126,6 @@ def load_script(path):
 
 
 def clean_and_split(text):
-    """Lowercase the text, remove punctuation, keep the letters of every
-    language we support, and split the text into a list of words."""
     text = text.lower().replace("’", "'")
     kept = []
     for ch in text:
@@ -168,7 +144,6 @@ def clean_and_split(text):
 
 
 def normalize_word(word):
-    """Remove tone marks and dots under letters, so 'ìfẹ́' and 'ife' become the same word."""
     word = word.lower()
     for hooked, plain in HOOKED_LETTERS.items():
         word = word.replace(hooked, plain)
@@ -181,7 +156,6 @@ def normalize_word(word):
 
 
 def build_keyword_sets():
-    """Join the lists of all languages into ONE set of normalized words for each genre."""
     keyword_sets = {}
     for genre, languages in GENRE_KEYWORDS.items():
         genre_words = set()
@@ -193,7 +167,6 @@ def build_keyword_sets():
 
 
 def count_genre_matches(words):
-    """Count how many words of the script belong to each genre."""
     keyword_sets = build_keyword_sets()
     normalized_words = [normalize_word(word) for word in words]
     counts = {}
@@ -204,7 +177,6 @@ def count_genre_matches(words):
 
 
 def calculate_percentages(counts):
-    """Turn genre counts into percentages (one decimal) that add up to exactly 100."""
     total = sum(counts.values())
     if total == 0:
         return {genre: 0.0 for genre in counts}
@@ -227,7 +199,6 @@ def percent_of(pair):
 
 
 def print_genre_report(counts, percentages):
-    """Print every genre from the biggest percentage to the smallest, with a small bar."""
     print("")
     print("Genres")
     ranked = sorted(percentages.items(), key=percent_of, reverse=True)
@@ -267,12 +238,10 @@ def is_character_cue(line):
 
 
 def looks_like_action_phrase(line):
-    """True if an ALL-CAPS line reads like an action beat, not a name."""
     return len(line.strip().split()) >= 3
 
 
 def looks_like_speech(line):
-    """True if a line reads like spoken dialogue, not action or a cue."""
     text = line.strip()
     if text == "":
         return False
@@ -288,7 +257,6 @@ def looks_like_speech(line):
 
 
 def has_dialogue(lines):
-    """True if a real character name is followed by actual speech."""
     for i in range(len(lines) - 1):
         cue = lines[i]
         if not is_character_cue(cue):
@@ -305,7 +273,6 @@ def make_error(line_number, severity, message, fix):
 
 
 def find_critical_errors(lines):
-    """Apply the three CRITICAL rules: too short, no dialogue, no scene headings."""
     errors = []
 
     word_count = sum([len(line.split()) for line in lines])
@@ -341,7 +308,6 @@ def get_speech(lines, cue_index):
 
 
 def find_moderate_errors(lines):
-    """Apply all five MODERATE rules."""
     errors = []
 
     for i, line in enumerate(lines):
@@ -497,7 +463,6 @@ def find_minor_errors(lines):
 
 
 def find_errors(lines):
-    """Run every error rule and return one list of errors. All 11 rules are in."""
     errors = []
     errors.extend(find_critical_errors(lines))
     errors.extend(find_moderate_errors(lines))
@@ -506,7 +471,6 @@ def find_errors(lines):
 
 
 def print_errors(errors):
-    """Print error counts and each error with its fix."""
     critical = len([e for e in errors if e["severity"] == "CRITICAL"])
     moderate = len([e for e in errors if e["severity"] == "MODERATE"])
     minor    = len([e for e in errors if e["severity"] == "MINOR"])
@@ -525,8 +489,6 @@ def print_errors(errors):
 
 
 def rating_tier(score):
-    """Turn a score into a rating tier. Tighter than v1 so EXCELLENT and
-    PERFECT are hard to reach (see PRD v2)."""
     if score <= 39:
         return "POOR"
     elif score <= 59:
@@ -540,10 +502,6 @@ def rating_tier(score):
 
 
 def calculate_score(errors):
-    """Apply the PRD penalty formula and return (score, tier).
-
-    Formula: max(0, 100 - 20*C - min(5*M, 30) - min(m, 10))
-    """
     critical = len([e for e in errors if e["severity"] == "CRITICAL"])
     moderate = len([e for e in errors if e["severity"] == "MODERATE"])
     minor    = len([e for e in errors if e["severity"] == "MINOR"])
@@ -557,7 +515,6 @@ def calculate_score(errors):
 
 
 def choose_comment(percentages, score):
-    """Pick the closing comment based on the result."""
     ranked = sorted(percentages.items(), key=percent_of, reverse=True)
     leader, lead_percent = ranked[0]
     second_percent = ranked[1][1] if len(ranked) > 1 else 0.0
@@ -583,7 +540,6 @@ def choose_comment(percentages, score):
 
 
 def parse_scenes(lines):
-    """Split the script at each INT. or EXT. heading."""
     scenes = []
     current = None
 
@@ -650,7 +606,6 @@ def parse_scenes(lines):
 
 
 def detect_language(words):
-    """Guess the main language of the script from common words."""
     if len(words) < 10:
         return "Unknown"
 
@@ -676,14 +631,104 @@ def detect_language(words):
     return leader
 
 
+# ---- Step 14: character list, dialogue ratio, length estimate ------------
+
+def count_speeches(lines):
+    """Count how many speeches each character has and how many words each speaks.
+
+    Returns a dict: {name: {"speeches": N, "words": M}}
+    Sorted by speeches (biggest first) when read by the caller.
+    """
+    result = {}
+    for i, line in enumerate(lines):
+        if not is_character_cue(line):
+            continue
+        if looks_like_action_phrase(line):
+            continue
+        name = line.split("(")[0].strip()
+        if name == "":
+            continue
+        speech = get_speech(lines, i)
+        if len(speech) == 0:
+            continue
+        speech_words = sum(len(s.split()) for s in speech)
+        if name not in result:
+            result[name] = {"speeches": 0, "words": 0}
+        result[name]["speeches"] += 1
+        result[name]["words"] += speech_words
+    return result
+
+
+def dialogue_ratio(lines):
+    """How much of the script is speech vs action (description).
+
+    Returns {"dialogue_words": N, "action_words": M, "dialogue_pct": X}
+    The percentage is dialogue words divided by total words, one decimal.
+    """
+    total_words = sum(len(line.split()) for line in lines)
+
+    dialogue_words = 0
+    for i, line in enumerate(lines):
+        if not is_character_cue(line):
+            continue
+        if looks_like_action_phrase(line):
+            continue
+        speech = get_speech(lines, i)
+        dialogue_words += sum(len(s.split()) for s in speech)
+
+    action_words = max(0, total_words - dialogue_words)
+    pct = round(dialogue_words / total_words * 100, 1) if total_words > 0 else 0.0
+    return {"dialogue_words": dialogue_words, "action_words": action_words,
+            "dialogue_pct": pct}
+
+
+def estimate_length(words):
+    """Estimate pages and screen minutes from word count.
+
+    Rule of thumb: about 250 words per page, 1 page = 1 minute.
+    Always an estimate, never a fact.
+    """
+    page_count = round(len(words) / WORDS_PER_PAGE, 1)
+    minutes = round(page_count)
+    return {"pages": page_count, "minutes": minutes}
+
+
+# ---- Step 14: print helpers -----------------------------------------------
+
+def print_characters(speech_counts):
+    """Print the character list, sorted by how often each one speaks."""
+    print("")
+    print(f"Characters: {len(speech_counts)}")
+    if len(speech_counts) == 0:
+        print("  No speaking characters found.")
+        return
+    ranked = sorted(speech_counts.items(),
+                    key=lambda pair: pair[1]["speeches"], reverse=True)
+    for name, info in ranked:
+        print(f"  {name:<20} {info['speeches']:>2} speeches   {info['words']} words")
+
+
+def print_dialogue_ratio(ratio):
+    """Print the dialogue vs action split."""
+    print("")
+    print(f"Dialogue vs action: {ratio['dialogue_pct']}% dialogue, "
+          f"{round(100 - ratio['dialogue_pct'], 1)}% action")
+    print(f"  Dialogue words: {ratio['dialogue_words']}")
+    print(f"  Action words:   {ratio['action_words']}")
+
+
+def print_length_estimate(estimate):
+    """Print the estimated pages and screen minutes. Always labelled estimate."""
+    print("")
+    print(f"Estimated length: ~{estimate['pages']} pages  (~{estimate['minutes']} minutes)")
+
+
 def print_language(language):
-    """Print the detected language line."""
     print("")
     print(f"Language: {language}")
 
 
 def print_scene_list(scenes):
-    """Print the scenes found in the script, with location and time of day."""
     print("")
     print(f"Scenes found: {len(scenes)}")
     if len(scenes) == 0:
@@ -694,9 +739,9 @@ def print_scene_list(scenes):
               f"(line {scene['first_line']}, {scene['word_count']} words)")
 
 
-def print_report(counts, percentages, errors, score, tier, comment, scenes, language):
-    """Print the full report in the PRD's sample layout:
-    language -> genres -> scenes -> errors -> score -> closing comment."""
+def print_report(counts, percentages, errors, score, tier, comment,
+                 scenes, language, speech_counts, ratio, estimate):
+    """Print the full report in the PRD's sample layout."""
     print("=" * 47)
     print("SCRIPTSCOPE REPORT".center(47))
     print("=" * 47)
@@ -706,6 +751,10 @@ def print_report(counts, percentages, errors, score, tier, comment, scenes, lang
     print_genre_report(counts, percentages)
 
     print_scene_list(scenes)
+
+    print_characters(speech_counts)
+    print_dialogue_ratio(ratio)
+    print_length_estimate(estimate)
 
     print_errors(errors)
 
@@ -734,7 +783,12 @@ def main():
     scenes = parse_scenes(lines)
     language = detect_language(words)
 
-    print_report(counts, percentages, errors, score, tier, comment, scenes, language)
+    speech_counts = count_speeches(lines)
+    ratio = dialogue_ratio(lines)
+    estimate = estimate_length(words)
+
+    print_report(counts, percentages, errors, score, tier, comment,
+                 scenes, language, speech_counts, ratio, estimate)
 
 
 if __name__ == "__main__":
