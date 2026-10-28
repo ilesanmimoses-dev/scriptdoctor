@@ -11,7 +11,7 @@ import unicodedata
 # Step 15: explain_simply()           - plain-words explanation (facts only)
 # Step 16: find_props_and_costumes()  - named items only, never invented
 # Step 17a: ask_yes_no(), build_schedule(), print_schedule()
-#           Basic per-location schedule. Fixed 5 pages/day. No preferences yet.
+# Step 17b: ask_schedule_preferences() - user chooses pages/day or scenes/day
 
 HOOKED_LETTERS = {"ɓ": "b", "ɗ": "d", "ƙ": "k", "ƴ": "y"}
 MIN_WORDS = 300
@@ -20,7 +20,6 @@ TIME_OF_DAY = ["DAY", "NIGHT", "MORNING", "AFTERNOON", "EVENING", "DAWN", "DUSK"
 MAX_SPEECH_WORDS = 80
 END_MARKERS = ["THE END", "FADE OUT", "FADE TO BLACK", "CUT TO BLACK"]
 WORDS_PER_PAGE = 250
-PAGES_PER_SHOOT_DAY = 5.0
 
 PROPS = [
     "gun", "candle", "chain", "phone",
@@ -634,7 +633,7 @@ def find_props_and_costumes(scenes):
     return {"props": found_props, "costumes": found_costumes}
 
 
-# ---- Step 17a: schedule estimate ------------------------------------------
+# ---- Step 17a/17b: schedule -------------------------------------------------
 
 def ask_yes_no(question):
     """Ask a yes/no question. True for 'y' or 'yes', False for anything else."""
@@ -642,14 +641,51 @@ def ask_yes_no(question):
     return answer in ("y", "yes")
 
 
-def build_schedule(scenes, pages_per_day=5.0):
-    """Group scenes by location and estimate pages and shoot days per location.
+def ask_schedule_preferences():
+    """Ask the user how to measure pace and how many per day.
 
+    Returns (unit, number) where unit is 'pages' or 'scenes'.
+    Defaults: 5 pages per day, or 4 scenes per day.
+    """
+    print("")
+    print("How do you want to measure pace?")
+    print("  1) Pages per day (standard)")
+    print("  2) Scenes per day")
+    choice = input("Choose [1]: ").strip()
+
+    if choice == "2":
+        unit = "scenes"
+        default_number = 4.0
+    else:
+        unit = "pages"
+        default_number = 5.0
+
+    prompt = f"{unit.capitalize()} per day (press Enter for {int(default_number)}): "
+    raw = input(prompt).strip()
+    if raw == "":
+        return unit, default_number
+
+    try:
+        number = float(raw)
+        if number > 0:
+            return unit, number
+    except ValueError:
+        pass
+
+    print(f"Not a valid number. Using {int(default_number)} {unit} per day.")
+    return unit, default_number
+
+
+def build_schedule(scenes, unit="pages", number_per_day=5.0):
+    """Group scenes by location and estimate days.
+
+    unit = 'pages': days = pages_at_location / number_per_day
+    unit = 'scenes': days = scenes_at_location / number_per_day
     Everything is an ESTIMATE, never a production plan.
-    Returns {"by_location": [...], "total_pages": X, "total_days": Y}.
     """
     if not scenes:
-        return {"by_location": [], "total_pages": 0.0, "total_days": 0.0}
+        return {"by_location": [], "total_days": 0.0,
+                "unit": unit, "number": number_per_day}
 
     groups = {}
     for scene in scenes:
@@ -660,11 +696,13 @@ def build_schedule(scenes, pages_per_day=5.0):
         groups[loc]["words"] += scene["word_count"]
 
     by_location = []
-    total_pages = 0.0
     total_days = 0.0
     for loc, info in groups.items():
         pages = round(info["words"] / WORDS_PER_PAGE, 1)
-        days = round(pages / pages_per_day, 1) if pages_per_day > 0 else 0.0
+        if unit == "scenes":
+            days = round(info["scenes"] / number_per_day, 1) if number_per_day > 0 else 0.0
+        else:
+            days = round(pages / number_per_day, 1) if number_per_day > 0 else 0.0
         by_location.append({
             "location": loc,
             "scenes": info["scenes"],
@@ -672,31 +710,34 @@ def build_schedule(scenes, pages_per_day=5.0):
             "pages": pages,
             "days": days,
         })
-        total_pages += pages
         total_days += days
 
     by_location.sort(key=lambda x: x["days"], reverse=True)
-    return {
-        "by_location": by_location,
-        "total_pages": round(total_pages, 1),
-        "total_days": round(total_days, 1),
-    }
+    return {"by_location": by_location,
+            "total_days": round(total_days, 1),
+            "unit": unit, "number": number_per_day}
 
 
-def print_schedule(schedule, pages_per_day=5.0):
-    """Print the schedule estimate. Always labelled as an estimate, never a fact."""
+def print_schedule(schedule):
+    """Print the schedule estimate. Always labelled as an estimate."""
+    unit = schedule["unit"]
+    number = schedule["number"]
     print("")
-    print(f"Schedule estimate (rough guide only, based on {pages_per_day} pages per day):")
+    print(f"Schedule estimate (rough guide only, based on {number:g} {unit} per day):")
     if not schedule["by_location"]:
         print("  No scenes to schedule.")
         return
     for entry in schedule["by_location"]:
         scene_word = "scene" if entry["scenes"] == 1 else "scenes"
-        print(f"  {entry['location']:<18} {entry['scenes']} {scene_word}   "
-              f"{entry['words']} words   ~{entry['pages']} pages   ~{entry['days']} days")
+        if unit == "scenes":
+            print(f"  {entry['location']:<18} {entry['scenes']} {scene_word}   "
+                  f"~{entry['days']} days")
+        else:
+            print(f"  {entry['location']:<18} {entry['scenes']} {scene_word}   "
+                  f"{entry['words']} words   ~{entry['pages']} pages   ~{entry['days']} days")
     print("")
     day_word = "day" if schedule["total_days"] == 1.0 else "days"
-    print(f"  Total: ~{schedule['total_pages']} pages, ~{schedule['total_days']} {day_word}")
+    print(f"  Total: ~{schedule['total_days']} {day_word}")
 
 
 # ---- Print helpers --------------------------------------------------------
@@ -818,8 +859,9 @@ def main():
                  scenes, language, speech_counts, ratio, estimate, explanation, items)
 
     if ask_yes_no("Would you also like a schedule estimate?"):
-        schedule = build_schedule(scenes, pages_per_day=PAGES_PER_SHOOT_DAY)
-        print_schedule(schedule, pages_per_day=PAGES_PER_SHOOT_DAY)
+        unit, number = ask_schedule_preferences()
+        schedule = build_schedule(scenes, unit=unit, number_per_day=number)
+        print_schedule(schedule)
 
 
 if __name__ == "__main__":
