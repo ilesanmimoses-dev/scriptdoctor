@@ -6,8 +6,11 @@ import unicodedata
 #                 no ending marker, inconsistent character name
 #   MINOR    (3): repeated word, extra spaces, sentence starts lowercase
 #
-# F5 (scoring) is added in this step: calculate_score() and rating_tier().
-# F6 (report + closing comment) comes in step 11.
+# F5 (scoring) is added: calculate_score() and rating_tier().
+# F6 (report + closing comment): print_report() and choose_comment().
+#
+# Step 12: parse_scenes() splits the script at each INT./EXT. heading.
+# Step 13: detect_language() guesses the main language from common words.
 
 # Hausa hooked letters are often typed as plain b, d, k and y,
 # so we treat each hooked letter and its plain version as the same letter.
@@ -114,6 +117,22 @@ TIER_COLOURS = {
     "GOOD":      COLOUR_MINOR,
     "EXCELLENT": COLOUR_EXCELLENT,
     "PERFECT":   COLOUR_PERFECT,
+}
+
+# ---- Language detection word lists (step 13) -----------------------------
+# Very common words per language, used only to guess the main language.
+# These are NOT genre keywords.
+LANGUAGE_COMMON_WORDS = {
+    "English": ["the", "and", "you", "is", "are", "what", "this", "that", "have",
+                "not", "with", "for", "but", "was", "were", "will", "from", "they"],
+    "Pidgin": ["dey", "wan", "wetin", "abeg", "sabi", "don", "make", "shey",
+               "waka", "chop", "gist", "biko", "oya", "nna", "wahala"],
+    "Yoruba": ["ni", "ti", "mo", "wa", "fun", "pe", "ko", "se", "àti", "ṣe",
+               "náà", "bi", "lati", "jẹ", "nígbà"],
+    "Hausa": ["da", "ka", "ki", "ya", "ta", "ne", "ce", "mu", "su", "ina",
+              "yaya", "yau", "gobe", "nan", "wannan"],
+    "Igbo": ["nke", "ya", "anyị", "ha", "bụ", "dị", "ka", "maka", "ebe",
+             "mgbe", "gị", "mụ", "nna", "nne", "ọ"],
 }
 
 
@@ -248,8 +267,7 @@ def is_character_cue(line):
 
 
 def looks_like_action_phrase(line):
-    """True if an ALL-CAPS line reads like an action beat, not a name.
-    Three or more ALL-CAPS words are almost certainly action."""
+    """True if an ALL-CAPS line reads like an action beat, not a name."""
     return len(line.strip().split()) >= 3
 
 
@@ -270,8 +288,7 @@ def looks_like_speech(line):
 
 
 def has_dialogue(lines):
-    """True if a real character name is followed by actual speech.
-    All-caps action lines like 'THE CROWD CHEERS' are NOT treated as cues."""
+    """True if a real character name is followed by actual speech."""
     for i in range(len(lines) - 1):
         cue = lines[i]
         if not is_character_cue(cue):
@@ -488,6 +505,83 @@ def find_errors(lines):
     return errors
 
 
+def print_errors(errors):
+    """Print error counts and each error with its fix."""
+    critical = len([e for e in errors if e["severity"] == "CRITICAL"])
+    moderate = len([e for e in errors if e["severity"] == "MODERATE"])
+    minor    = len([e for e in errors if e["severity"] == "MINOR"])
+
+    print("")
+    print(f"Errors found: {COLOUR_CRITICAL}{critical} CRITICAL{RESET}, "
+          f"{COLOUR_MODERATE}{moderate} MODERATE{RESET}, "
+          f"{COLOUR_MINOR}{minor} MINOR{RESET}")
+    if len(errors) == 0:
+        print("  No errors found.")
+    for error in errors:
+        colour = SEVERITY_COLOURS.get(error["severity"], "")
+        where = "Script" if error["line"] is None else f"Line {error['line']}"
+        print(f"  {colour}[{error['severity']}]{RESET} {where}: {error['message']}")
+        print(f"      Fix: {error['fix']}")
+
+
+def rating_tier(score):
+    """Turn a score into a rating tier. Tighter than v1 so EXCELLENT and
+    PERFECT are hard to reach (see PRD v2)."""
+    if score <= 39:
+        return "POOR"
+    elif score <= 59:
+        return "AVERAGE"
+    elif score <= 74:
+        return "GOOD"
+    elif score <= 89:
+        return "EXCELLENT"
+    else:
+        return "PERFECT"
+
+
+def calculate_score(errors):
+    """Apply the PRD penalty formula and return (score, tier).
+
+    Formula: max(0, 100 - 20*C - min(5*M, 30) - min(m, 10))
+    """
+    critical = len([e for e in errors if e["severity"] == "CRITICAL"])
+    moderate = len([e for e in errors if e["severity"] == "MODERATE"])
+    minor    = len([e for e in errors if e["severity"] == "MINOR"])
+
+    loss_critical = 20 * critical
+    loss_moderate = min(5 * moderate, 30)
+    loss_minor    = min(1 * minor, 10)
+
+    score = max(0, 100 - loss_critical - loss_moderate - loss_minor)
+    return score, rating_tier(score)
+
+
+def choose_comment(percentages, score):
+    """Pick the closing comment based on the result."""
+    ranked = sorted(percentages.items(), key=percent_of, reverse=True)
+    leader, lead_percent = ranked[0]
+    second_percent = ranked[1][1] if len(ranked) > 1 else 0.0
+
+    if score < 40:
+        return ("Interesting: every great writer started rough. Fix the CRITICAL "
+                "problems first and run the script again — you will see the score jump.")
+
+    if lead_percent >= 40 and (lead_percent - second_percent) >= 15:
+        fun_facts = {
+            "Action": "Action scripts live on verbs — keep the chase moving.",
+            "Comedy": "Comedy is the hardest genre to score; laughter is subjective.",
+            "Romance": "Romance lives on small gestures, not big speeches.",
+            "Emotional/Drama": "Drama works best when the quiet moments carry the weight.",
+            "Horror": "Horror is about what you don't show as much as what you do.",
+            "Fiction/Fantasy": "Fantasy needs its rules clear before the magic lands.",
+            "Erotic": "Tension, not explicitness, is what makes this genre work.",
+        }
+        return f"Interesting: {leader} leads clearly here ({lead_percent:.1f}%). {fun_facts[leader]}"
+
+    return ("Interesting: your script blends several genres, and most great films "
+            "do exactly that!")
+
+
 def parse_scenes(lines):
     """Split the script at each INT. or EXT. heading."""
     scenes = []
@@ -555,86 +649,38 @@ def parse_scenes(lines):
     return scenes
 
 
+def detect_language(words):
+    """Guess the main language of the script from common words."""
+    if len(words) < 10:
+        return "Unknown"
 
-def print_errors(errors):
-    """Print error counts and each error with its fix.
-    Severity tags are colour-coded: red CRITICAL, yellow MODERATE, cyan MINOR."""
-    critical = len([e for e in errors if e["severity"] == "CRITICAL"])
-    moderate = len([e for e in errors if e["severity"] == "MODERATE"])
-    minor    = len([e for e in errors if e["severity"] == "MINOR"])
+    normalised = [normalize_word(w) for w in words]
 
+    counts = {}
+    for language, common in LANGUAGE_COMMON_WORDS.items():
+        keyword_set = {normalize_word(w) for w in common}
+        matches = [w for w in normalised if w in keyword_set]
+        counts[language] = len(matches)
+
+    total = sum(counts.values())
+    if total < 5:
+        return "Unknown"
+
+    ranked = sorted(counts.items(), key=percent_of, reverse=True)
+    leader, leader_count = ranked[0]
+    second_count = ranked[1][1] if len(ranked) > 1 else 0
+
+    if leader_count < 2 or leader_count < second_count * 2:
+        return "Mixed"
+
+    return leader
+
+
+def print_language(language):
+    """Print the detected language line."""
     print("")
-    print(f"Errors found: {COLOUR_CRITICAL}{critical} CRITICAL{RESET}, "
-          f"{COLOUR_MODERATE}{moderate} MODERATE{RESET}, "
-          f"{COLOUR_MINOR}{minor} MINOR{RESET}")
-    if len(errors) == 0:
-        print("  No errors found.")
-    for error in errors:
-        colour = SEVERITY_COLOURS.get(error["severity"], "")
-        where = "Script" if error["line"] is None else f"Line {error['line']}"
-        print(f"  {colour}[{error['severity']}]{RESET} {where}: {error['message']}")
-        print(f"      Fix: {error['fix']}")
+    print(f"Language: {language}")
 
-
-def rating_tier(score):
-    """Turn a score into a rating tier. Tighter than v1 so EXCELLENT and
-    PERFECT are hard to reach (see PRD v2)."""
-    if score <= 39:
-        return "POOR"
-    elif score <= 59:
-        return "AVERAGE"
-    elif score <= 74:
-        return "GOOD"
-    elif score <= 89:
-        return "EXCELLENT"
-    else:
-        return "PERFECT"
-
-
-def calculate_score(errors):
-    """Apply the PRD penalty formula and return (score, tier).
-
-    Formula: max(0, 100 - 20*C - min(5*M, 30) - min(m, 10))
-    C = CRITICAL count (no cap)
-    M = MODERATE count (loss capped at 30)
-    m = MINOR count (loss capped at 10)
-    """
-    critical = len([e for e in errors if e["severity"] == "CRITICAL"])
-    moderate = len([e for e in errors if e["severity"] == "MODERATE"])
-    minor    = len([e for e in errors if e["severity"] == "MINOR"])
-
-    loss_critical = 20 * critical
-    loss_moderate = min(5 * moderate, 30)
-    loss_minor    = min(1 * minor, 10)
-
-    score = max(0, 100 - loss_critical - loss_moderate - loss_minor)
-    return score, rating_tier(score)
-
-
-def choose_comment(percentages, score):
-    """Pick the closing comment based on the result."""
-    ranked = sorted(percentages.items(), key=percent_of, reverse=True)
-    leader, lead_percent = ranked[0]
-    second_percent = ranked[1][1] if len(ranked) > 1 else 0.0
-
-    if score < 40:
-        return ("Interesting: every great writer started rough. Fix the CRITICAL "
-                "problems first and run the script again — you will see the score jump.")
-
-    if lead_percent >= 40 and (lead_percent - second_percent) >= 15:
-        fun_facts = {
-            "Action": "Action scripts live on verbs — keep the chase moving.",
-            "Comedy": "Comedy is the hardest genre to score; laughter is subjective.",
-            "Romance": "Romance lives on small gestures, not big speeches.",
-            "Emotional/Drama": "Drama works best when the quiet moments carry the weight.",
-            "Horror": "Horror is about what you don't show as much as what you do.",
-            "Fiction/Fantasy": "Fantasy needs its rules clear before the magic lands.",
-            "Erotic": "Tension, not explicitness, is what makes this genre work.",
-        }
-        return f"Interesting: {leader} leads clearly here ({lead_percent:.1f}%). {fun_facts[leader]}"
-
-    return ("Interesting: your script blends several genres, and most great films "
-            "do exactly that!")
 
 def print_scene_list(scenes):
     """Print the scenes found in the script, with location and time of day."""
@@ -648,12 +694,14 @@ def print_scene_list(scenes):
               f"(line {scene['first_line']}, {scene['word_count']} words)")
 
 
-def print_report(counts, percentages, errors, score, tier, comment, scenes):
+def print_report(counts, percentages, errors, score, tier, comment, scenes, language):
     """Print the full report in the PRD's sample layout:
-    genres -> scenes -> errors -> score -> closing comment."""
+    language -> genres -> scenes -> errors -> score -> closing comment."""
     print("=" * 47)
     print("SCRIPTSCOPE REPORT".center(47))
     print("=" * 47)
+
+    print_language(language)
 
     print_genre_report(counts, percentages)
 
@@ -667,7 +715,7 @@ def print_report(counts, percentages, errors, score, tier, comment, scenes):
 
     print("-" * 47)
     print(comment)
-    
+
 
 def main():
     path = input("Type the script file name (example: sample_scripts/broken_short.txt): ").strip()
@@ -684,18 +732,10 @@ def main():
     score, tier = calculate_score(errors)
     comment = choose_comment(percentages, score)
     scenes = parse_scenes(lines)
+    language = detect_language(words)
 
-    print_report(counts, percentages, errors, score, tier, comment, scenes)
-def _test_parse_scenes():
-    path = "sample_scripts/screenplay_test.txt"
-    text = load_script(path)
-    if text is None:
-        return
-    scenes = parse_scenes(text.splitlines())
-    print(f"Scenes found: {len(scenes)}")
-    for n, scene in enumerate(scenes, start=1):
-        print(f"  Scene {n}: {scene['interior']}. {scene['location']} - {scene['time']} "
-              f"(line {scene['first_line']}, {scene['word_count']} words)")
+    print_report(counts, percentages, errors, score, tier, comment, scenes, language)
+
+
 if __name__ == "__main__":
     main()
-
