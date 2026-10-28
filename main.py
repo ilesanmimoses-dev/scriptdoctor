@@ -488,6 +488,74 @@ def find_errors(lines):
     return errors
 
 
+def parse_scenes(lines):
+    """Split the script at each INT. or EXT. heading."""
+    scenes = []
+    current = None
+
+    for i, line in enumerate(lines):
+        line_number = i + 1
+
+        if is_scene_heading(line):
+            if current is not None:
+                scenes.append(current)
+
+            heading_upper = line.strip().upper()
+
+            if heading_upper.startswith("EXT."):
+                interior = "EXT"
+            elif heading_upper.startswith("INT."):
+                interior = "INT"
+            else:
+                interior = "UNKNOWN"
+
+            rest = heading_upper
+            for prefix in ("INT./EXT.", "EXT./INT.", "INT.", "EXT."):
+                if rest.startswith(prefix):
+                    rest = rest[len(prefix):].strip()
+                    break
+
+            parts = rest.replace("–", "-").replace("—", "-").split("-")
+            location_part = parts[0].strip() if parts else ""
+            time_part = " - ".join(parts[1:]).strip() if len(parts) > 1 else ""
+
+            time_found = "UNKNOWN"
+            for word in time_part.split():
+                clean_word = word.strip(".,()")
+                if clean_word in TIME_OF_DAY:
+                    time_found = clean_word
+                    break
+            if time_found == "UNKNOWN":
+                for word in heading_upper.replace(".", " ").replace("-", " ").split():
+                    clean_word = word.strip(".,()/")
+                    if clean_word in TIME_OF_DAY:
+                        time_found = clean_word
+                        break
+
+            location = location_part.strip(" .,-–—/").strip()
+            if location == "":
+                location = "UNKNOWN"
+
+            current = {
+                "location": location,
+                "time": time_found,
+                "interior": interior,
+                "first_line": line_number,
+                "lines": [],
+                "word_count": 0,
+            }
+        else:
+            if current is not None:
+                current["lines"].append(line)
+                current["word_count"] += len(line.split())
+
+    if current is not None:
+        scenes.append(current)
+
+    return scenes
+
+
+
 def print_errors(errors):
     """Print error counts and each error with its fix.
     Severity tags are colour-coded: red CRITICAL, yellow MODERATE, cyan MINOR."""
@@ -568,14 +636,28 @@ def choose_comment(percentages, score):
     return ("Interesting: your script blends several genres, and most great films "
             "do exactly that!")
 
+def print_scene_list(scenes):
+    """Print the scenes found in the script, with location and time of day."""
+    print("")
+    print(f"Scenes found: {len(scenes)}")
+    if len(scenes) == 0:
+        print("  No scene headings (INT. or EXT.) were found.")
+        return
+    for n, scene in enumerate(scenes, start=1):
+        print(f"  Scene {n}: {scene['interior']}. {scene['location']} - {scene['time']} "
+              f"(line {scene['first_line']}, {scene['word_count']} words)")
 
-def print_report(counts, percentages, errors, score, tier, comment):
-    """Print the full report in the PRD's sample layout."""
+
+def print_report(counts, percentages, errors, score, tier, comment, scenes):
+    """Print the full report in the PRD's sample layout:
+    genres -> scenes -> errors -> score -> closing comment."""
     print("=" * 47)
     print("SCRIPTSCOPE REPORT".center(47))
     print("=" * 47)
 
     print_genre_report(counts, percentages)
+
+    print_scene_list(scenes)
 
     print_errors(errors)
 
@@ -593,16 +675,27 @@ def main():
     if text is None:
         return
 
+    lines = text.splitlines()
     words = clean_and_split(text)
     counts = count_genre_matches(words)
     percentages = calculate_percentages(counts)
 
-    errors = find_errors(text.splitlines())
+    errors = find_errors(lines)
     score, tier = calculate_score(errors)
     comment = choose_comment(percentages, score)
+    scenes = parse_scenes(lines)
 
-    print_report(counts, percentages, errors, score, tier, comment)
-
-
+    print_report(counts, percentages, errors, score, tier, comment, scenes)
+def _test_parse_scenes():
+    path = "sample_scripts/screenplay_test.txt"
+    text = load_script(path)
+    if text is None:
+        return
+    scenes = parse_scenes(text.splitlines())
+    print(f"Scenes found: {len(scenes)}")
+    for n, scene in enumerate(scenes, start=1):
+        print(f"  Scene {n}: {scene['interior']}. {scene['location']} - {scene['time']} "
+              f"(line {scene['first_line']}, {scene['word_count']} words)")
 if __name__ == "__main__":
-    main()    
+    main()
+
