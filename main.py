@@ -5,10 +5,11 @@ import unicodedata
 #               no ending marker, inconsistent character name
 # MINOR    (3): repeated word, extra spaces, sentence starts lowercase
 #
-# Step 12: parse_scenes()      - split script at INT./EXT. headings
-# Step 13: detect_language()   - guess main language
+# Step 12: parse_scenes()             - split script at INT./EXT. headings
+# Step 13: detect_language()          - guess main language
 # Step 14: count_speeches(), dialogue_ratio(), estimate_length()
-# Step 15: explain_simply()    - plain-words explanation (facts only)
+# Step 15: explain_simply()           - plain-words explanation (facts only)
+# Step 16: find_props_and_costumes()  - named items only, never invented
 
 HOOKED_LETTERS = {"ɓ": "b", "ɗ": "d", "ƙ": "k", "ƴ": "y"}
 MIN_WORDS = 300
@@ -17,6 +18,33 @@ TIME_OF_DAY = ["DAY", "NIGHT", "MORNING", "AFTERNOON", "EVENING", "DAWN", "DUSK"
 MAX_SPEECH_WORDS = 80
 END_MARKERS = ["THE END", "FADE OUT", "FADE TO BLACK", "CUT TO BLACK"]
 WORDS_PER_PAGE = 250
+
+# ---- Props and costumes (step 16) -----------------------------------------
+# Only items that are literally named in the script are reported.
+# These lists are deliberately small and can grow. A word belongs to ONE
+# category only (props OR costumes), so there is no overlap.
+# Includes Nigerian-context items because ScriptScope targets Nigerian films.
+PROPS = [
+    # PRD examples
+    "gun", "candle", "chain", "phone",
+    # Common everyday props
+    "knife", "letter", "book", "bag", "money", "key", "ring", "mirror",
+    "bottle", "cup", "chair", "table", "door", "window", "car", "bicycle",
+    "umbrella", "clock", "photograph",
+    # Nigerian context
+    "calabash", "kola", "pot", "mat", "broom",
+]
+
+COSTUMES = [
+    # PRD examples
+    "uniform", "dress", "suit",
+    # Common costume words
+    "shirt", "trousers", "hat", "shoe", "coat", "jacket",
+    "gown", "skirt", "tie", "glasses", "watch", "scarf", "boots",
+    "veil", "robe", "apron", "helmet",
+    # Nigerian context
+    "wrapper", "gele", "agbada", "kaftan", "babariga",
+]
 
 GENRE_KEYWORDS = {
     "Action": {"English": ["gun", "guns", "gunfire", "explosion", "explode", "fight",
@@ -115,6 +143,14 @@ def normalize_word(word):
         word = word.replace(hooked, plain)
     decomposed = unicodedata.normalize("NFD", word)
     return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+
+
+def singular_fallback(word):
+    """If 'word' looks like a simple plural (ends in 's'), return the singular form too.
+    Used by props/costumes matching so 'bags' matches 'bag'."""
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
 
 
 def build_keyword_sets():
@@ -521,11 +557,8 @@ def estimate_length(words):
 
 
 def explain_simply(words, language, scenes, speech_counts, percentages, estimate):
-    """Explain the script in plain words. Facts only - never invent."""
     sentences = []
     wt = len(words)
-
-    # 1. Size sentence
     if wt < MIN_WORDS:
         sentences.append(f"This is a short {language} script with only {wt} words.")
     elif wt < 1000:
@@ -533,7 +566,6 @@ def explain_simply(words, language, scenes, speech_counts, percentages, estimate
     else:
         sentences.append(f"This is a longer {language} script with about {wt} words.")
 
-    # 2. Scene sentence
     n = len(scenes)
     if n == 0:
         sentences.append("No scene headings were found, so the place is not clear.")
@@ -556,7 +588,6 @@ def explain_simply(words, language, scenes, speech_counts, percentages, estimate
         else:
             sentences.append(f"The script has {n} scenes, including {', '.join(locs[:3])} and others.")
 
-    # 3. Characters sentence
     if not speech_counts:
         sentences.append("No speaking characters were found.")
     else:
@@ -573,7 +604,6 @@ def explain_simply(words, language, scenes, speech_counts, percentages, estimate
             sentences.append(f"The main characters are {', '.join(names[:3])}, and others. "
                              f"{lead} speaks the most ({info['speeches']} times).")
 
-    # 4. Mood sentence
     ranked_g = sorted(percentages.items(), key=percent_of, reverse=True)
     lg, lp = ranked_g[0]
     if lp == 0.0:
@@ -585,11 +615,75 @@ def explain_simply(words, language, scenes, speech_counts, percentages, estimate
     else:
         sentences.append(f"The genres are spread out, with {lg} slightly ahead ({lp:.1f}%).")
 
-    # 5. Length sentence
     sentences.append(f"Estimated length: about {estimate['pages']} pages "
                      f"(about {estimate['minutes']} minutes of screen time).")
     return sentences
 
+
+# ---- Step 16: props and costumes ------------------------------------------
+
+def find_props_and_costumes(scenes):
+    """Find props and costumes that are literally named in the script.
+
+    Returns {"props": {item: [scene numbers]}, "costumes": {item: [scene numbers]}}.
+    A script with no scenes returns empty dicts. Items are never invented.
+    Plurals match their singular (bags -> bag) via singular_fallback().
+    """
+    props_set = {normalize_word(w) for w in PROPS}
+    costumes_set = {normalize_word(w) for w in COSTUMES}
+
+    found_props = {}
+    found_costumes = {}
+
+    for n, scene in enumerate(scenes, start=1):
+        body_words = clean_and_split("\n".join(scene["lines"]))
+        for raw in body_words:
+            word = normalize_word(raw)
+            candidate = singular_fallback(word)
+            # Try both the word itself and its singular form.
+            for test_word in (word, candidate):
+                if test_word in props_set:
+                    found_props.setdefault(test_word, []).append(n)
+                    break
+                if test_word in costumes_set:
+                    found_costumes.setdefault(test_word, []).append(n)
+                    break
+
+    # Deduplicate scene numbers (same prop twice in one scene -> one entry).
+    for item in found_props:
+        found_props[item] = sorted(set(found_props[item]))
+    for item in found_costumes:
+        found_costumes[item] = sorted(set(found_costumes[item]))
+
+    return {"props": found_props, "costumes": found_costumes}
+
+
+def print_props_and_costumes(items):
+    props = items["props"]
+    costumes = items["costumes"]
+
+    print("")
+    print(f"Props named ({len(props)}):")
+    if not props:
+        print("  No props from the word list were named in the script.")
+    else:
+        for name in sorted(props):
+            scene_list = ", ".join(str(s) for s in props[name])
+            plural = "s" if len(props[name]) > 1 else ""
+            print(f"  {name:<20} scene{plural} {scene_list}")
+
+    print("")
+    print(f"Costumes named ({len(costumes)}):")
+    if not costumes:
+        print("  No costumes from the word list were named in the script.")
+    else:
+        for name in sorted(costumes):
+            scene_list = ", ".join(str(s) for s in costumes[name])
+            plural = "s" if len(costumes[name]) > 1 else ""
+            print(f"  {name:<20} scene{plural} {scene_list}")
+
+
+# ---- Print helpers --------------------------------------------------------
 
 def print_explanation(sentences):
     print("")
@@ -639,7 +733,8 @@ def print_length_estimate(estimate):
 
 
 def print_report(counts, percentages, errors, score, tier, comment,
-                 scenes, language, speech_counts, ratio, estimate, explanation):
+                 scenes, language, speech_counts, ratio, estimate, explanation,
+                 items):
     print("=" * 47)
     print("SCRIPTSCOPE REPORT".center(47))
     print("=" * 47)
@@ -650,6 +745,7 @@ def print_report(counts, percentages, errors, score, tier, comment,
     print_dialogue_ratio(ratio)
     print_length_estimate(estimate)
     print_explanation(explanation)
+    print_props_and_costumes(items)
     print_errors(errors)
     tc = TIER_COLOURS.get(tier, "")
     print("")
@@ -676,8 +772,9 @@ def main():
     ratio = dialogue_ratio(lines)
     estimate = estimate_length(words)
     explanation = explain_simply(words, language, scenes, speech_counts, percentages, estimate)
+    items = find_props_and_costumes(scenes)
     print_report(counts, percentages, errors, score, tier, comment,
-                 scenes, language, speech_counts, ratio, estimate, explanation)
+                 scenes, language, speech_counts, ratio, estimate, explanation, items)
 
 
 if __name__ == "__main__":
