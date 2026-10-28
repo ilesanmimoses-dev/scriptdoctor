@@ -10,8 +10,9 @@ import unicodedata
 # Step 14: count_speeches(), dialogue_ratio(), estimate_length()
 # Step 15: explain_simply()           - plain-words explanation (facts only)
 # Step 16: find_props_and_costumes()  - named items only, never invented
-# Step 17a: ask_yes_no(), build_schedule(), print_schedule()
-# Step 17b: ask_schedule_preferences() - user chooses pages/day or scenes/day
+# Step 17a: ask_yes_no(), basic schedule
+# Step 17b: ask_schedule_preferences() - user chooses unit and number
+# Step 17c: ask_schedule_preference() - free text parsed for order/filter/days
 
 HOOKED_LETTERS = {"ɓ": "b", "ɗ": "d", "ƙ": "k", "ƴ": "y"}
 MIN_WORDS = 300
@@ -633,20 +634,14 @@ def find_props_and_costumes(scenes):
     return {"props": found_props, "costumes": found_costumes}
 
 
-# ---- Step 17a/17b: schedule -------------------------------------------------
+# ---- Step 17a/17b/17c: schedule and preferences ----------------------------
 
 def ask_yes_no(question):
-    """Ask a yes/no question. True for 'y' or 'yes', False for anything else."""
     answer = input(question + " (yes/no): ").strip().lower()
     return answer in ("y", "yes")
 
 
 def ask_schedule_preferences():
-    """Ask the user how to measure pace and how many per day.
-
-    Returns (unit, number) where unit is 'pages' or 'scenes'.
-    Defaults: 5 pages per day, or 4 scenes per day.
-    """
     print("")
     print("How do you want to measure pace?")
     print("  1) Pages per day (standard)")
@@ -676,16 +671,151 @@ def ask_schedule_preferences():
     return unit, default_number
 
 
-def build_schedule(scenes, unit="pages", number_per_day=5.0):
-    """Group scenes by location and estimate days.
+def find_location_in_text(text, scenes):
+    """Return the first scene location that appears in the user's text, or None.
+    Matches the whole location word, case-insensitive."""
+    locations = []
+    for sc in scenes:
+        loc = sc["location"]
+        if loc and loc != "UNKNOWN" and loc not in locations:
+            locations.append(loc)
 
-    unit = 'pages': days = pages_at_location / number_per_day
-    unit = 'scenes': days = scenes_at_location / number_per_day
-    Everything is an ESTIMATE, never a production plan.
+    text_upper = text.upper()
+    text_words = text_upper.replace(",", " ").replace(".", " ").split()
+    for loc in locations:
+        if loc in text_words or loc in text_upper:
+            return loc
+    return None
+
+
+def find_days_in_text(text):
+    """Return the first 'N days' or 'N-day' number from the text, or None.
+    Only integers. Very simple: scan words for digits."""
+    words = text.lower().replace("-", " ").replace(",", " ").split()
+    for i, w in enumerate(words):
+        if w.isdigit():
+            n = int(w)
+            # Accept if any nearby word is 'day' or 'days'
+            window = words[max(0, i - 1):i + 3]
+            if "day" in window or "days" in window:
+                return n
+    return None
+
+
+def parse_schedule_preference(text, scenes):
+    """Extract structured preferences from the user's free text.
+
+    Returns a dict with these keys (defaults in brackets):
+      order_location    [None]        - a location name to put first
+      filter_interior   [False]       - drop EXT scenes
+      filter_exterior   [False]       - drop INT scenes
+      filter_day        [False]       - drop non-DAY scenes
+      filter_night      [False]       - drop non-NIGHT scenes
+      fixed_days        [None]        - target number of days
     """
+    prefs = {
+        "order_location": None,
+        "filter_interior": False,
+        "filter_exterior": False,
+        "filter_day": False,
+        "filter_night": False,
+        "fixed_days": None,
+    }
+
+    if text == "":
+        return prefs
+
+    lower = text.lower()
+
+    # Interior / exterior
+    if "interior" in lower or "indoor" in lower or "int only" in lower:
+        prefs["filter_interior"] = True
+    if "exterior" in lower or "outdoor" in lower or "ext only" in lower:
+        prefs["filter_exterior"] = True
+
+    # Day / night
+    if "day scene" in lower or "only day" in lower or "day only" in lower or "daytime" in lower:
+        prefs["filter_day"] = True
+    if "night scene" in lower or "only night" in lower or "night only" in lower or "nighttime" in lower:
+        prefs["filter_night"] = True
+
+    # Order by location
+    loc = find_location_in_text(text, scenes)
+    if loc is not None:
+        if "first" in lower or "start" in lower or "begin" in lower:
+            prefs["order_location"] = loc
+
+    # Fixed days
+    days = find_days_in_text(text)
+    if days is not None and days > 0:
+        prefs["fixed_days"] = days
+
+    return prefs
+
+
+def ask_schedule_preference(scenes):
+    """Ask the user for any special preference. Parse the reply.
+    Returns a dict (see parse_schedule_preference)."""
+    print("")
+    print("Any special preference? (press Enter for none)")
+    print('  Examples: "kitchen first", "only interior", "night scenes only", "fit into 3 days"')
+    text = input("> ").strip()
+
+    if text == "":
+        return parse_schedule_preference("", scenes)
+
+    prefs = parse_schedule_preference(text, scenes)
+
+    # Report what was understood, if anything.
+    understood = []
+    if prefs["order_location"]:
+        understood.append(f"start with {prefs['order_location']}")
+    if prefs["filter_interior"]:
+        understood.append("interior scenes only")
+    if prefs["filter_exterior"]:
+        understood.append("exterior scenes only")
+    if prefs["filter_day"]:
+        understood.append("day scenes only")
+    if prefs["filter_night"]:
+        understood.append("night scenes only")
+    if prefs["fixed_days"]:
+        understood.append(f"fit into {prefs['fixed_days']} days")
+
+    if understood:
+        print("")
+        print("Got it:")
+        for item in understood:
+            print(f"  {item}")
+    else:
+        print("")
+        print("I didn't understand that preference. Using the numbers you gave.")
+
+    return prefs
+
+
+def apply_preferences(scenes, prefs):
+    """Filter scenes by interior/exterior/day/night."""
+    result = []
+    for sc in scenes:
+        if prefs["filter_interior"] and sc["interior"] != "INT":
+            continue
+        if prefs["filter_exterior"] and sc["interior"] != "EXT":
+            continue
+        if prefs["filter_day"] and sc["time"] != "DAY":
+            continue
+        if prefs["filter_night"] and sc["time"] != "NIGHT":
+            continue
+        result.append(sc)
+    return result
+
+
+def build_schedule(scenes, unit="pages", number_per_day=5.0, prefs=None):
+    if prefs is None:
+        prefs = {"order_location": None, "fixed_days": None}
+
     if not scenes:
         return {"by_location": [], "total_days": 0.0,
-                "unit": unit, "number": number_per_day}
+                "unit": unit, "number": number_per_day, "fixed_days": None}
 
     groups = {}
     for scene in scenes:
@@ -712,18 +842,29 @@ def build_schedule(scenes, unit="pages", number_per_day=5.0):
         })
         total_days += days
 
-    by_location.sort(key=lambda x: x["days"], reverse=True)
+    # Reorder if 'location first' was requested.
+    if prefs.get("order_location"):
+        target = prefs["order_location"]
+        first = [e for e in by_location if e["location"] == target]
+        rest = [e for e in by_location if e["location"] != target]
+        by_location = first + rest
+    else:
+        by_location.sort(key=lambda x: x["days"], reverse=True)
+
+    fixed = prefs.get("fixed_days")
     return {"by_location": by_location,
             "total_days": round(total_days, 1),
-            "unit": unit, "number": number_per_day}
+            "unit": unit, "number": number_per_day,
+            "fixed_days": fixed}
 
 
 def print_schedule(schedule):
-    """Print the schedule estimate. Always labelled as an estimate."""
     unit = schedule["unit"]
     number = schedule["number"]
+    fixed = schedule.get("fixed_days")
+    note = f", fit into {fixed} days" if fixed else ""
     print("")
-    print(f"Schedule estimate (rough guide only, based on {number:g} {unit} per day):")
+    print(f"Schedule estimate (rough guide only, based on {number:g} {unit} per day{note}):")
     if not schedule["by_location"]:
         print("  No scenes to schedule.")
         return
@@ -738,6 +879,9 @@ def print_schedule(schedule):
     print("")
     day_word = "day" if schedule["total_days"] == 1.0 else "days"
     print(f"  Total: ~{schedule['total_days']} {day_word}")
+    if fixed:
+        print(f"  (Note: fit into {fixed} days was requested. This is a rough guide, "
+              f"not a real production plan.)")
 
 
 # ---- Print helpers --------------------------------------------------------
@@ -860,7 +1004,9 @@ def main():
 
     if ask_yes_no("Would you also like a schedule estimate?"):
         unit, number = ask_schedule_preferences()
-        schedule = build_schedule(scenes, unit=unit, number_per_day=number)
+        prefs = ask_schedule_preference(scenes)
+        filtered_scenes = apply_preferences(scenes, prefs)
+        schedule = build_schedule(filtered_scenes, unit=unit, number_per_day=number, prefs=prefs)
         print_schedule(schedule)
 
 
