@@ -1,10 +1,15 @@
-"""ScriptScope Flask backend - step 18.
+"""ScriptScope FastAPI backend - step 18b.
 
 Two endpoints:
   GET  /health  - check the server is alive
   POST /analyze - analyse a script and return JSON
+
+FastAPI also auto-generates an interactive docs page at /docs.
 """
-from flask import Flask, request, jsonify
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 from analysis import (
     clean_and_split,
@@ -22,29 +27,34 @@ from analysis import (
     find_props_and_costumes,
 )
 
-app = Flask(__name__)
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
+
+app = FastAPI(title="ScriptScope API", version="1.0")
 
 
-@app.route("/health", methods=["GET"])
+class ScriptInput(BaseModel):
+    script: str
+
+
+@app.get("/health")
 def health():
     """A tiny endpoint so we can check the server is up."""
-    return jsonify({"status": "ok", "service": "scriptscope-backend"})
+    return {"status": "ok", "service": "scriptscope-backend"}
 
 
-@app.route("/analyze", methods=["POST"])
-def analyze():
+@app.post("/analyze")
+def analyze(payload: ScriptInput):
     """Analyse a script.
 
     Request body (JSON): {"script": "<the script text>"}
     Response: JSON with language, genres, scenes, characters, errors, score, etc.
     """
-    data = request.get_json(silent=True)
-    if not data or "script" not in data:
-        return jsonify({"error": 'Send JSON like {"script": "your script text"}'}), 400
-
-    text = data["script"]
+    text = payload.script
     if not isinstance(text, str) or text.strip() == "":
-        return jsonify({"error": "The 'script' field must be a non-empty string."}), 400
+        raise HTTPException(
+            status_code=400,
+            detail="The 'script' field must be a non-empty string.",
+        )
 
     lines = text.splitlines()
     words = clean_and_split(text)
@@ -61,7 +71,7 @@ def analyze():
     explanation = explain_simply(words, language, scenes, speech_counts, percentages, estimate)
     items = find_props_and_costumes(scenes)
 
-    return jsonify({
+    return {
         "language": language,
         "genres": percentages,
         "scenes": scenes,
@@ -74,8 +84,9 @@ def analyze():
         "score": score,
         "tier": tier,
         "comment": comment,
-    })
+    }
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True)
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
