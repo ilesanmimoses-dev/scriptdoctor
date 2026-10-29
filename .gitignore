@@ -1,6 +1,27 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
-.DS_Store
+venv/
+env/
+
+# Secrets — NEVER commit these
+.env
+.env.local
+
+# Backups and scratch
+main_step17c_backup.py
 main_step8b_backup.py
+*.bak
+
+# Local test scripts (not source code)
 sample_scripts/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
