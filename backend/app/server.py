@@ -1,6 +1,7 @@
-"""ScriptScope FastAPI backend - step 18b.
+"""ScriptScope FastAPI backend - step 19.
 
-Two endpoints:
+Endpoints:
+  GET  /        - serves the frontend page
   GET  /health  - check the server is alive
   POST /analyze - analyse a script and return JSON
 
@@ -9,6 +10,7 @@ FastAPI also auto-generates an interactive docs page at /docs.
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from analysis import (
@@ -34,6 +36,12 @@ app = FastAPI(title="ScriptScope API", version="1.0")
 
 class ScriptInput(BaseModel):
     script: str
+
+
+@app.get("/")
+def index():
+    """Serve the frontend page."""
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.get("/health")

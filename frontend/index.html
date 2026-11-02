@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScriptScope</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            color: #1a1a1a;
+            background: #fafafa;
+            line-height: 1.5;
+        }
+        h1 { color: #111; margin-bottom: 0.25rem; }
+        .tagline { color: #666; margin-top: 0; margin-bottom: 1.5rem; }
+        textarea {
+            width: 100%;
+            min-height: 240px;
+            font-family: "Courier New", monospace;
+            font-size: 14px;
+            padding: 0.75rem;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            resize: vertical;
+        }
+        button {
+            padding: 0.75rem 1.75rem;
+            font-size: 16px;
+            font-weight: 600;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 0.75rem;
+        }
+        button:hover { background: #0055aa; }
+        button:disabled { background: #999; cursor: not-allowed; }
+        #result { margin-top: 2rem; }
+        #result .card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1rem;
+        }
+        #result h2 { margin-top: 0; color: #111; }
+        #result .score { font-size: 2rem; font-weight: 700; }
+        #result .tier-POOR      { color: #c0392b; }
+        #result .tier-AVERAGE   { color: #c67c00; }
+        #result .tier-GOOD      { color: #16897a; }
+        #result .tier-EXCELLENT { color: #1e8449; }
+        #result .tier-PERFECT   { color: #16651f; }
+        #result .severity-CRITICAL { color: #c0392b; font-weight: 700; }
+        #result .severity-MODERATE { color: #c67c00; font-weight: 700; }
+        #result .severity-MINOR    { color: #16897a; font-weight: 700; }
+        #result ul { padding-left: 1.25rem; }
+        #result .comment {
+            font-style: italic;
+            color: #444;
+            border-left: 3px solid #0066cc;
+            padding-left: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>ScriptScope</h1>
+    <p class="tagline">Paste a script and click Analyze. Rules-based analysis — no AI.</p>
+
+    <textarea id="script-input" placeholder="INT. KITCHEN - NIGHT
+
+A dark room. A candle burns on the table.
+
+JOHN
+Hello, MARY.
+
+MARY
+Hi, JOHN.
+
+FADE OUT."></textarea>
+    <br>
+    <button id="analyze-btn">Analyze</button>
+
+    <div id="result"></div>
+
+    <script>
+        const input  = document.getElementById("script-input");
+        const button = document.getElementById("analyze-btn");
+        const result = document.getElementById("result");
+
+        button.addEventListener("click", async () => {
+            const script = input.value;
+            if (!script.trim()) {
+                result.innerHTML = '<p>Please paste a script first.</p>';
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = "Analyzing...";
+            result.innerHTML = "";
+
+            try {
+                const response = await fetch("/analyze", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ script: script })
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    result.innerHTML = "<p><strong>Error:</strong> " +
+                        (data.detail || data.error || "unknown") + "</p>";
+                    return;
+                }
+                result.innerHTML = renderReport(data);
+            } catch (err) {
+                result.innerHTML = "<p><strong>Network error:</strong> " +
+                    err.message + "</p>";
+            } finally {
+                button.disabled = false;
+                button.textContent = "Analyze";
+            }
+        });
+
+        function escapeHtml(text) {
+            const div = document.createElement("div");
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+
+        function renderReport(data) {
+            let html = "";
+
+            html += '<div class="card">';
+            html += '<h2>Score</h2>';
+            html += `<p class="score tier-${escapeHtml(data.tier)}">${data.score} / 100</p>`;
+            html += `<p><strong>Rating:</strong> ${escapeHtml(data.tier)}</p>`;
+            html += `<p><strong>Language:</strong> ${escapeHtml(data.language)}</p>`;
+            html += '</div>';
+
+            html += '<div class="card"><h2>Genres</h2><ul>';
+            for (const [genre, pct] of Object.entries(data.genres)) {
+                html += `<li>${escapeHtml(genre)}: ${pct.toFixed(1)}%</li>`;
+            }
+            html += '</ul></div>';
+
+            if (data.scenes && data.scenes.length > 0) {
+                html += `<div class="card"><h2>Scenes (${data.scenes.length})</h2><ul>`;
+                for (const sc of data.scenes) {
+                    html += `<li>${escapeHtml(sc.interior)}. ${escapeHtml(sc.location)} - ${escapeHtml(sc.time)}</li>`;
+                }
+                html += '</ul></div>';
+            }
+
+            const charNames = Object.keys(data.characters || {});
+            if (charNames.length > 0) {
+                html += `<div class="card"><h2>Characters (${charNames.length})</h2><ul>`;
+                for (const name of charNames) {
+                    const info = data.characters[name];
+                    html += `<li>${escapeHtml(name)}: ${info.speeches} speeches, ${info.words} words</li>`;
+                }
+                html += '</ul></div>';
+            }
+
+            html += `<div class="card"><h2>Errors (${data.errors.length})</h2>`;
+            if (data.errors.length === 0) {
+                html += '<p>No errors found.</p>';
+            } else {
+                html += '<ul>';
+                for (const e of data.errors) {
+                    const where = e.line === null ? "Script" : "Line " + e.line;
+                    html += '<li>';
+                    html += `<span class="severity-${escapeHtml(e.severity)}">[${escapeHtml(e.severity)}]</span> `;
+                    html += `${escapeHtml(where)}: ${escapeHtml(e.message)}`;
+                    html += `<br><small>Fix: ${escapeHtml(e.fix)}</small>`;
+                    html += '</li>';
+                }
+                html += '</ul>';
+            }
+            html += '</div>';
+
+            if (data.explanation && data.explanation.length > 0) {
+                html += '<div class="card"><h2>In plain words</h2><ul>';
+                for (const s of data.explanation) {
+                    html += `<li>${escapeHtml(s)}</li>`;
+                }
+                html += '</ul></div>';
+            }
+
+            html += '<div class="card"><h2>Interesting</h2>';
+            html += `<p class="comment">${escapeHtml(data.comment)}</p>`;
+            html += '</div>';
+
+            return html;
+        }
+    </script>
+</body>
+</html>
