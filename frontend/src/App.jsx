@@ -17,6 +17,10 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  
+  // AI States
+  const [aiResult, setAiResult] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const handleAnalyze = async () => {
     if (!script.trim()) return;
@@ -24,6 +28,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setAiResult(null); // clear previous AI result
 
     try {
       const response = await fetch('/analyze', {
@@ -44,7 +49,37 @@ export default function App() {
     }
   };
 
-  // Helper for tier colors
+    const handleAiAnalyze = async () => {
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const response = await fetch('/ai-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script })
+      });
+      
+      // Safely read the response as text first
+      const text = await response.text();
+      
+      if (!text) {
+        throw new Error("Server returned an empty response. Is the backend running?");
+      }
+
+      const data = JSON.parse(text);
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'AI failed');
+      }
+      
+      setAiResult(data.ai_analysis);
+    } catch (err) {
+      setAiResult("Error: " + err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const getTierColor = (tier) => {
     switch(tier) {
       case 'POOR': return 'text-red-600';
@@ -56,7 +91,6 @@ export default function App() {
     }
   };
 
-  // Helper for severity colors
   const getSeverityColor = (severity) => {
     switch(severity) {
       case 'CRITICAL': return 'text-red-600 font-bold';
@@ -69,13 +103,11 @@ export default function App() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 font-sans text-gray-900 bg-gray-50 min-h-screen">
       
-      {/* Header */}
       <header className="mb-8">
         <h1 className="text-3xl font-bold mb-1">ScriptScope</h1>
         <p className="text-gray-500">Paste a script and click Analyze. Rules-based analysis — no AI.</p>
       </header>
 
-      {/* Input Area */}
       <div className="mb-4">
         <textarea
           value={script}
@@ -85,7 +117,6 @@ export default function App() {
         />
       </div>
 
-      {/* Action Button */}
       <button
         onClick={handleAnalyze}
         disabled={loading || !script.trim()}
@@ -94,17 +125,34 @@ export default function App() {
         {loading ? 'Analyzing...' : 'Analyze'}
       </button>
 
-      {/* Error Message */}
       {error && (
         <div className="p-4 mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg">
           <strong>Error:</strong> {error}
         </div>
       )}
 
-      {/* Results */}
       {result && (
         <div className="space-y-6">
           
+          {/* AI Analysis Box */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-indigo-200 border-l-4 border-l-indigo-500 mb-8">
+            <h2 className="text-xl font-bold mb-2 text-indigo-900">Want deeper feedback?</h2>
+            <p className="text-gray-600 mb-4 text-sm">Let Gemini AI find plot holes, weak dialogue, and write a real summary.</p>
+            <button
+              onClick={handleAiAnalyze}
+              disabled={aiLoading}
+              className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded shadow transition-colors"
+            >
+              {aiLoading ? 'AI is reading... (wait 5s)' : 'Get AI Analysis'}
+            </button>
+            
+            {aiResult && (
+              <div className="mt-6 p-5 bg-indigo-50 border border-indigo-100 rounded text-gray-800 text-sm whitespace-pre-wrap font-sans leading-relaxed">
+                {aiResult}
+              </div>
+            )}
+          </div>
+
           {/* Score Card */}
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-xl font-bold mb-4">Score</h2>
@@ -135,7 +183,7 @@ export default function App() {
               <ul className="list-disc pl-5 space-y-1 text-gray-700">
                 {result.scenes.map((sc, i) => (
                   <li key={i}>
-                    <span className="font-mono text-sm bg-gray-100 px-1 py-0.5 rounded mr-2">{sc.interior}</span>
+                    <span className="font-mono text-sm bg-gray-100 px-1 py-0.5 rounded mr-2">{sc.interior}.</span>
                     {sc.location} - {sc.time}
                   </li>
                 ))}
@@ -207,4 +255,4 @@ export default function App() {
       )}
     </div>
   );
-}  
+}

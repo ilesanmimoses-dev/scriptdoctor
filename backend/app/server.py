@@ -1,16 +1,16 @@
-"""ScriptScope FastAPI backend - step 19.
+"""ScriptScope FastAPI backend - step 23.
 
 Endpoints:
-  GET  /        - serves the frontend page
-  GET  /health  - check the server is alive
-  POST /analyze - analyse a script and return JSON
-
-FastAPI also auto-generates an interactive docs page at /docs.
+  GET  /           - serves the frontend page
+  GET  /health     - check the server is alive
+  POST /analyze    - rule-based analysis
+  POST /ai-summary - AI-based analysis (Gemini)
 """
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from analysis import (
@@ -28,6 +28,9 @@ from analysis import (
     explain_simply,
     find_props_and_costumes,
 )
+
+# NEW: Import the AI function
+from ai.client import analyze_script_with_ai
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
@@ -52,17 +55,10 @@ def health():
 
 @app.post("/analyze")
 def analyze(payload: ScriptInput):
-    """Analyse a script.
-
-    Request body (JSON): {"script": "<the script text>"}
-    Response: JSON with language, genres, scenes, characters, errors, score, etc.
-    """
+    """Rule-based analysis."""
     text = payload.script
     if not isinstance(text, str) or text.strip() == "":
-        raise HTTPException(
-            status_code=400,
-            detail="The 'script' field must be a non-empty string.",
-        )
+        raise HTTPException(status_code=400, detail="Script is empty.")
 
     lines = text.splitlines()
     words = clean_and_split(text)
@@ -93,6 +89,24 @@ def analyze(payload: ScriptInput):
         "tier": tier,
         "comment": comment,
     }
+
+
+# NEW: The AI endpoint
+@app.post("/ai-summary")
+def ai_summary(payload: ScriptInput):
+    """Uses AI to analyze the script for plot holes and summaries."""
+    text = payload.script
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Script is empty.")
+    
+    ai_result = analyze_script_with_ai(text)
+    return {"ai_analysis": ai_result}
+
+
+# Serve the React app in production
+DIST_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if DIST_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(DIST_DIR), html=True), name="static")
 
 
 if __name__ == "__main__":
