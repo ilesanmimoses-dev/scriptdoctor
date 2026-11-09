@@ -27,6 +27,8 @@ from analysis import (
     estimate_length,
     explain_simply,
     find_props_and_costumes,
+    get_content_rating,
+    get_emotion_balance,
 )
 
 # NEW: Import the AI function
@@ -88,6 +90,8 @@ def analyze(payload: ScriptInput):
         "score": score,
         "tier": tier,
         "comment": comment,
+        "content_rating": get_content_rating(words),
+        "emotion_balance": get_emotion_balance(words),
     }
 
 
