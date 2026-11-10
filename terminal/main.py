@@ -957,6 +957,39 @@ def print_props_and_costumes(items):
             plural = "s" if len(costumes[name]) > 1 else ""
             print(f"  {name:<20} scene{plural} {scene_list}")
 
+# ---- New PRD Features: Content Rating & Emotion Balance -------------------
+
+ADULT_WORDS = ["kill", "blood", "gun", "drug", "sex", "naked", "assault", "murder", "abuse", "curse", "damn"]
+POSITIVE_WORDS = ["love", "happy", "joy", "smile", "laugh", "hope", "win", "friend", "peace", "good", "wonderful"]
+NEGATIVE_WORDS = ["sad", "cry", "hate", "pain", "fear", "lose", "angry", "bad", "death", "dark", "lonely"]
+
+def get_content_rating(words):
+    """Guess if the script is Family-Friendly, Teen, or Adult."""
+    normalized = [normalize_word(w) for w in words]
+    adult_matches = [w for w in normalized if w in ADULT_WORDS]
+    
+    if len(adult_matches) > 2:
+        return "Adult"
+    elif len(adult_matches) > 0:
+        return "Teen"
+    else:
+        return "Family-Friendly"
+
+def get_emotion_balance(words):
+    """Count positive vs negative words to show the mood."""
+    normalized = [normalize_word(w) for w in words]
+    pos_count = len([w for w in normalized if w in POSITIVE_WORDS])
+    neg_count = len([w for w in normalized if w in NEGATIVE_WORDS])
+    
+    if pos_count > neg_count:
+        mood = "Hopeful"
+    elif neg_count > pos_count:
+        mood = "Dark / Tense"
+    else:
+        mood = "Neutral"
+        
+    return {"positive_words": pos_count, "negative_words": neg_count, "mood": mood}
+
 
 def print_report(counts, percentages, errors, score, tier, comment,
                  scenes, language, speech_counts, ratio, estimate, explanation,

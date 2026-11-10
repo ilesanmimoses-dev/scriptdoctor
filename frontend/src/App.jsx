@@ -49,7 +49,7 @@ export default function App() {
     }
   };
 
-    const handleAiAnalyze = async () => {
+  const handleAiAnalyze = async () => {
     setAiLoading(true);
     setAiResult(null);
     try {
@@ -59,25 +59,68 @@ export default function App() {
         body: JSON.stringify({ script })
       });
       
-      // Safely read the response as text first
       const text = await response.text();
+      if (!text) throw new Error("Server returned an empty response.");
       
-      if (!text) {
-        throw new Error("Server returned an empty response. Is the backend running?");
-      }
-
       const data = JSON.parse(text);
 
-      if (!response.ok) {
-        throw new Error(data.detail || 'AI failed');
-      }
-      
+      if (!response.ok) throw new Error(data.detail || 'AI failed');
       setAiResult(data.ai_analysis);
     } catch (err) {
       setAiResult("Error: " + err.message);
     } finally {
       setAiLoading(false);
     }
+  };
+
+  const handleDownload = () => {
+    if (!result) return;
+
+    let text = `===============================================\n`;
+    text += `               SCRIPTSCOPE REPORT               \n`;
+    text += `===============================================\n\n`;
+
+    text += `Score: ${result.score} / 100\n`;
+    text += `Rating: ${result.tier}\n`;
+    text += `Language: ${result.language}\n`;
+    text += `Age Rating: ${result.content_rating}\n`;
+    text += `Mood: ${result.emotion_balance.mood}\n\n`;
+
+    text += `--- Genres ---\n`;
+    Object.entries(result.genres).forEach(([genre, pct]) => {
+      text += `${genre}: ${pct.toFixed(1)}%\n`;
+    });
+    text += `\n`;
+
+    text += `--- Errors (${result.errors.length}) ---\n`;
+    result.errors.forEach(err => {
+      const where = err.line === null ? "Script" : `Line ${err.line}`;
+      text += `[${err.severity}] ${where}: ${err.message}\n`;
+      text += `  Fix: ${err.fix}\n\n`;
+    });
+
+    text += `--- In plain words ---\n`;
+    result.explanation.forEach(s => {
+      text += `- ${s}\n`;
+    });
+    text += `\n`;
+
+    if (aiResult && !aiResult.startsWith("Error")) {
+      text += `--- AI Analysis ---\n`;
+      text += `${aiResult}\n\n`;
+    }
+
+    text += `Interesting: ${result.comment}\n`;
+
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ScriptScope_Report_${new Date().getTime()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const getTierColor = (tier) => {
@@ -159,8 +202,35 @@ export default function App() {
             <p className={`text-4xl font-extrabold ${getTierColor(result.tier)} mb-2`}>
               {result.score} / 100
             </p>
-            <p className="text-gray-700"><strong>Rating:</strong> {result.tier}</p>
-            <p className="text-gray-700"><strong>Language:</strong> {result.language}</p>
+            <p className="text-gray-700 mb-1">
+              <strong>Rating:</strong> {result.tier}
+            </p>
+            <p className="text-gray-700 mb-4">
+              <strong>Language:</strong> {result.language}
+            </p>
+            <button
+              onClick={handleDownload}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white text-sm font-semibold rounded shadow transition-colors"
+            >
+              ⬇ Download Report (.txt)
+            </button>
+          </div>
+
+          {/* Content Rating & Emotion Card */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <h2 className="text-xl font-bold mb-4">Content Rating & Mood</h2>
+            <p className="text-gray-700 mb-2">
+              <strong>Age Rating:</strong> {result.content_rating}
+              {result.genres["Erotic"] > 0 && (
+                <span className="text-sm text-red-500 ml-2">(Contains adult themes)</span>
+              )}
+            </p>
+            <p className="text-gray-700">
+              <strong>Mood:</strong> {result.emotion_balance.mood} 
+              <span className="text-sm text-gray-500 ml-2">
+                ({result.emotion_balance.positive_words} positive, {result.emotion_balance.negative_words} negative words)
+              </span>
+            </p>
           </div>
 
           {/* Genres Card */}
