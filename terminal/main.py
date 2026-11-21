@@ -991,6 +991,66 @@ def get_emotion_balance(words):
     return {"positive_words": pos_count, "negative_words": neg_count, "mood": mood}
 
 
+# ... (your other code) ...
+
+def get_budget_and_audience(words, scenes, characters, content_rating):
+    """Estimate budget scale and target audience."""
+    num_locations = len(set(scene["location"] for scene in scenes)) if scenes else 0
+    action_words = ["explode", "gun", "car", "crash", "fight", "stunt", "helicopter", "fire", "blood", "weapon"]
+    
+    normalized = [normalize_word(w) for w in words]
+    action_count = len([w for w in normalized if w in action_words])
+    
+    if num_locations > 5 or action_count > 10 or len(characters) > 10:
+        budget = "High Budget (Action/Complex)"
+    elif num_locations > 2 or action_count > 3 or len(characters) > 5:
+        budget = "Medium Budget"
+    else:
+        budget = "Low Budget (Indie)"
+
+    if content_rating == "Adult":
+        audience = "Mature Audience (18+)"
+    elif content_rating == "Teen":
+        audience = "Teens and Young Adults (13+)"
+    else:
+        audience = "General Audience (Family-Friendly)"
+
+    return {"budget": budget, "audience": audience}
+
+
+def generate_shoot_schedule(scenes, days=5):
+    """Generate a day-by-day shooting schedule."""
+    if not scenes:
+        return []
+
+    # If user wants more days than scenes, just do 1 scene per day
+    actual_days = min(days, len(scenes))
+    scenes_per_day = len(scenes) / actual_days
+
+    schedule = []
+    current_day = 1
+    current_day_scenes = []
+
+    for i, scene in enumerate(scenes):
+        current_day_scenes.append(scene)
+        # If we've hit the limit for this day, move to the next day
+        if len(current_day_scenes) >= scenes_per_day or i == len(scenes) - 1:
+            schedule.append({
+                "day": current_day,
+                "scenes": [f"Scene at {s['location']} ({s['time']})" for s in current_day_scenes]
+            })
+            current_day += 1
+            current_day_scenes = []
+
+    return schedule
+
+# Leave this alone, this is your existing code
+def print_report(counts, percentages, errors, score, tier, comment,
+                 scenes, language, speech_counts, ratio, estimate, explanation,
+                 items):
+    print("=" * 47)
+    # ... (the rest of print_report) ...
+
 def print_report(counts, percentages, errors, score, tier, comment,
                  scenes, language, speech_counts, ratio, estimate, explanation,
                  items):

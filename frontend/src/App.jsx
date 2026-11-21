@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 const SAMPLE_SCRIPT = `INT. KITCHEN - NIGHT
 
@@ -18,9 +18,10 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
-  // AI States
   const [aiResult, setAiResult] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  
+  const fileInputRef = useRef(null);
 
   const handleAnalyze = async () => {
     if (!script.trim()) return;
@@ -28,7 +29,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setAiResult(null); // clear previous AI result
+    setAiResult(null);
 
     try {
       const response = await fetch('/analyze', {
@@ -37,15 +38,40 @@ export default function App() {
         body: JSON.stringify({ script })
       });
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || data.error || 'Failed to analyze');
-      }
+      if (!response.ok) throw new Error(data.detail || 'Failed to analyze');
       setResult(data);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setAiResult(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Failed to upload file');
+      setResult(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -58,12 +84,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ script })
       });
-      
       const text = await response.text();
       if (!text) throw new Error("Server returned an empty response.");
-      
       const data = JSON.parse(text);
-
       if (!response.ok) throw new Error(data.detail || 'AI failed');
       setAiResult(data.ai_analysis);
     } catch (err) {
@@ -75,41 +98,29 @@ export default function App() {
 
   const handleDownload = () => {
     if (!result) return;
-
     let text = `===============================================\n`;
     text += `               SCRIPTSCOPE REPORT               \n`;
     text += `===============================================\n\n`;
-
     text += `Score: ${result.score} / 100\n`;
     text += `Rating: ${result.tier}\n`;
     text += `Language: ${result.language}\n`;
     text += `Age Rating: ${result.content_rating}\n`;
     text += `Mood: ${result.emotion_balance.mood}\n\n`;
-
     text += `--- Genres ---\n`;
     Object.entries(result.genres).forEach(([genre, pct]) => {
       text += `${genre}: ${pct.toFixed(1)}%\n`;
     });
-    text += `\n`;
-
-    text += `--- Errors (${result.errors.length}) ---\n`;
+    text += `\n--- Errors (${result.errors.length}) ---\n`;
     result.errors.forEach(err => {
       const where = err.line === null ? "Script" : `Line ${err.line}`;
-      text += `[${err.severity}] ${where}: ${err.message}\n`;
-      text += `  Fix: ${err.fix}\n\n`;
+      text += `[${err.severity}] ${where}: ${err.message}\n  Fix: ${err.fix}\n\n`;
     });
-
     text += `--- In plain words ---\n`;
-    result.explanation.forEach(s => {
-      text += `- ${s}\n`;
-    });
+    result.explanation.forEach(s => { text += `- ${s}\n`; });
     text += `\n`;
-
     if (aiResult && !aiResult.startsWith("Error")) {
-      text += `--- AI Analysis ---\n`;
-      text += `${aiResult}\n\n`;
+      text += `--- AI Analysis ---\n${aiResult}\n\n`;
     }
-
     text += `Interesting: ${result.comment}\n`;
 
     const blob = new Blob([text], { type: 'text/plain' });
@@ -160,13 +171,30 @@ export default function App() {
         />
       </div>
 
-      <button
-        onClick={handleAnalyze}
-        disabled={loading || !script.trim()}
-        className="w-full sm:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors mb-8"
-      >
-        {loading ? 'Analyzing...' : 'Analyze'}
-      </button>
+      <div className="flex gap-4 mb-8">
+        <button
+          onClick={handleAnalyze}
+          disabled={loading || !script.trim()}
+          className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors"
+        >
+          {loading ? 'Analyzing...' : 'Analyze'}
+        </button>
+        
+        <input 
+          type="file" 
+          accept=".pdf,.docx,.txt" 
+          ref={fileInputRef} 
+          onChange={handleFileUpload} 
+          className="hidden" 
+        />
+        <button
+          onClick={() => fileInputRef.current.click()}
+          disabled={loading}
+          className="px-8 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors"
+        >
+          Upload File (PDF/Word/TXT)
+        </button>
+      </div>
 
       {error && (
         <div className="p-4 mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg">
@@ -177,7 +205,6 @@ export default function App() {
       {result && (
         <div className="space-y-6">
           
-          {/* AI Analysis Box */}
           <div className="bg-white p-6 rounded-lg shadow-sm border border-indigo-200 border-l-4 border-l-indigo-500 mb-8">
             <h2 className="text-xl font-bold mb-2 text-indigo-900">Want deeper feedback?</h2>
             <p className="text-gray-600 mb-4 text-sm">Let Gemini AI find plot holes, weak dialogue, and write a real summary.</p>
@@ -188,7 +215,6 @@ export default function App() {
             >
               {aiLoading ? 'AI is reading... (wait 5s)' : 'Get AI Analysis'}
             </button>
-            
             {aiResult && (
               <div className="mt-6 p-5 bg-indigo-50 border border-indigo-100 rounded text-gray-800 text-sm whitespace-pre-wrap font-sans leading-relaxed">
                 {aiResult}
@@ -196,18 +222,11 @@ export default function App() {
             )}
           </div>
 
-          {/* Score Card */}
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-xl font-bold mb-4">Score</h2>
-            <p className={`text-4xl font-extrabold ${getTierColor(result.tier)} mb-2`}>
-              {result.score} / 100
-            </p>
-            <p className="text-gray-700 mb-1">
-              <strong>Rating:</strong> {result.tier}
-            </p>
-            <p className="text-gray-700 mb-4">
-              <strong>Language:</strong> {result.language}
-            </p>
+            <p className={`text-4xl font-extrabold ${getTierColor(result.tier)} mb-2`}>{result.score} / 100</p>
+            <p className="text-gray-700 mb-1"><strong>Rating:</strong> {result.tier}</p>
+            <p className="text-gray-700 mb-4"><strong>Language:</strong> {result.language}</p>
             <button
               onClick={handleDownload}
               className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white text-sm font-semibold rounded shadow transition-colors"
@@ -216,24 +235,24 @@ export default function App() {
             </button>
           </div>
 
-          {/* Content Rating & Emotion Card */}
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-xl font-bold mb-4">Content Rating & Mood</h2>
             <p className="text-gray-700 mb-2">
               <strong>Age Rating:</strong> {result.content_rating}
-              {result.genres["Erotic"] > 0 && (
-                <span className="text-sm text-red-500 ml-2">(Contains adult themes)</span>
-              )}
+              {result.genres["Erotic"] > 0 && <span className="text-sm text-red-500 ml-2">(Contains adult themes)</span>}
             </p>
             <p className="text-gray-700">
               <strong>Mood:</strong> {result.emotion_balance.mood} 
-              <span className="text-sm text-gray-500 ml-2">
-                ({result.emotion_balance.positive_words} positive, {result.emotion_balance.negative_words} negative words)
-              </span>
+              <span className="text-sm text-gray-500 ml-2">({result.emotion_balance.positive_words} positive, {result.emotion_balance.negative_words} negative words)</span>
             </p>
           </div>
 
-          {/* Genres Card */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <h2 className="text-xl font-bold mb-4">Budget & Audience</h2>
+            <p className="text-gray-700 mb-2"><strong>Estimated Budget:</strong> {result.budget_and_audience.budget}</p>
+            <p className="text-gray-700"><strong>Target Audience:</strong> {result.budget_and_audience.audience}</p>
+          </div>
+
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-xl font-bold mb-4">Genres</h2>
             <ul className="space-y-1 text-gray-700">
@@ -246,7 +265,20 @@ export default function App() {
             </ul>
           </div>
 
-          {/* Scenes Card */}
+          {result.genre_by_section && result.genre_by_section.length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <h2 className="text-xl font-bold mb-4">Genre by Section (Mood Shift)</h2>
+              <div className="flex gap-2 flex-wrap">
+                {result.genre_by_section.map((sec, i) => (
+                  <div key={i} className="bg-gray-100 p-2 rounded text-sm flex-1 text-center min-w-[100px]">
+                    <div className="text-gray-500 mb-1">Part {sec.section}</div>
+                    <div className="font-semibold text-blue-700">{sec.genre}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {result.scenes?.length > 0 && (
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
               <h2 className="text-xl font-bold mb-4">Scenes ({result.scenes.length})</h2>
@@ -261,7 +293,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Shoot Schedule Card */}
           {result.shoot_schedule && result.shoot_schedule.length > 0 && (
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
               <h2 className="text-xl font-bold mb-4">Estimated 5-Day Shoot Schedule</h2>
@@ -281,7 +312,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Characters Card */}
           {Object.keys(result.characters || {}).length > 0 && (
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
               <h2 className="text-xl font-bold mb-4">Characters ({Object.keys(result.characters).length})</h2>
@@ -296,7 +326,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Errors Card */}
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-xl font-bold mb-4">Errors ({result.errors.length})</h2>
             {result.errors.length === 0 ? (
@@ -308,14 +337,10 @@ export default function App() {
                   return (
                     <li key={i} className="bg-gray-50 p-3 rounded border border-gray-100">
                       <div className="mb-1">
-                        <span className={`mr-2 ${getSeverityColor(err.severity)}`}>
-                          [{err.severity}]
-                        </span>
+                        <span className={`mr-2 ${getSeverityColor(err.severity)}`}>[{err.severity}]</span>
                         <span className="text-gray-800">{where}: {err.message}</span>
                       </div>
-                      <div className="text-sm text-gray-500 pl-1">
-                        <strong>Fix:</strong> {err.fix}
-                      </div>
+                      <div className="text-sm text-gray-500 pl-1"><strong>Fix:</strong> {err.fix}</div>
                     </li>
                   );
                 })}
@@ -323,7 +348,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Plain Words Card */}
           {result.explanation?.length > 0 && (
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
               <h2 className="text-xl font-bold mb-4">In plain words</h2>
@@ -335,7 +359,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Comment Card */}
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 border-l-4 border-l-blue-500">
             <h2 className="text-xl font-bold mb-2">Interesting</h2>
             <p className="italic text-gray-600">{result.comment}</p>

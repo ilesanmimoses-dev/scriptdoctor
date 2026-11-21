@@ -1,14 +1,7 @@
-"""ScriptScope FastAPI backend - step 23.
-
-Endpoints:
-  GET  /           - serves the frontend page
-  GET  /health     - check the server is alive
-  POST /analyze    - rule-based analysis
-  POST /ai-summary - AI-based analysis (Gemini)
-"""
+"""ScriptScope FastAPI backend."""
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -29,9 +22,11 @@ from analysis import (
     find_props_and_costumes,
     get_content_rating,
     get_emotion_balance,
+    get_budget_and_audience,
+    generate_shoot_schedule,
+    extract_text_from_file, # <--- Make sure this is here
 )
 
-# NEW: Import the AI function
 from ai.client import analyze_script_with_ai
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
@@ -92,10 +87,57 @@ def analyze(payload: ScriptInput):
         "comment": comment,
         "content_rating": get_content_rating(words),
         "emotion_balance": get_emotion_balance(words),
+        "budget_and_audience": get_budget_and_audience(words, scenes, speech_counts, get_content_rating(words)),
+        "shoot_schedule": generate_shoot_schedule(scenes, days=5),
     }
 
 
-# NEW: The AI endpoint
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """Receives an uploaded file, extracts the text, and runs analysis."""
+    try:
+        contents = await file.read()
+        text = extract_text_from_file(contents, file.filename)
+        
+        lines = text.splitlines()
+        words = clean_and_split(text)
+        counts = count_genre_matches(words)
+        percentages = calculate_percentages(counts)
+        errors = find_errors(lines)
+        score, tier = calculate_score(errors)
+        comment = choose_comment(percentages, score)
+        scenes = parse_scenes(lines)
+        language = detect_language(words)
+        speech_counts = count_speeches(lines)
+        ratio = dialogue_ratio(lines)
+        estimate = estimate_length(words)
+        explanation = explain_simply(words, language, scenes, speech_counts, percentages, estimate)
+        items = find_props_and_costumes(scenes)
+
+        return {
+            "language": language,
+            "genres": percentages,
+            "scenes": scenes,
+            "characters": speech_counts,
+            "dialogue_ratio": ratio,
+            "estimate": estimate,
+            "explanation": explanation,
+            "props_and_costumes": items,
+            "errors": errors,
+            "score": score,
+            "tier": tier,
+            "comment": comment,
+            "content_rating": get_content_rating(words),
+            "emotion_balance": get_emotion_balance(words),
+            "budget_and_audience": get_budget_and_audience(words, scenes, speech_counts, get_content_rating(words)),
+            "shoot_schedule": generate_shoot_schedule(scenes, days=5),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+
+
 @app.post("/ai-summary")
 def ai_summary(payload: ScriptInput):
     """Uses AI to analyze the script for plot holes and summaries."""

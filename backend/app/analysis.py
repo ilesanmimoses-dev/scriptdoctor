@@ -28,4 +28,32 @@ from main import (
     find_props_and_costumes,
     get_content_rating,
     get_emotion_balance,
+    get_budget_and_audience,
+    generate_shoot_schedule,
 )
+
+import io
+from pypdf import PdfReader
+from docx import Document
+
+def extract_text_from_file(file_bytes, filename):
+    """Extract plain text from an uploaded PDF, Word, or TXT file."""
+    filename = filename.lower()
+    
+    if filename.endswith(".pdf"):
+        reader = PdfReader(io.BytesIO(file_bytes))
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+        
+    elif filename.endswith(".docx"):
+        doc = Document(io.BytesIO(file_bytes))
+        text = "\n".join([para.text for para in doc.paragraphs])
+        return text
+        
+    elif filename.endswith(".txt"):
+        return file_bytes.decode("utf-8")
+        
+    else:
+        raise ValueError("Unsupported file type. Please upload PDF, DOCX, or TXT.")
