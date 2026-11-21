@@ -261,6 +261,26 @@ export default function App() {
             </div>
           )}
 
+          {/* Shoot Schedule Card */}
+          {result.shoot_schedule && result.shoot_schedule.length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <h2 className="text-xl font-bold mb-4">Estimated 5-Day Shoot Schedule</h2>
+              <p className="text-sm text-gray-500 mb-4">(A rough guide - assumes 5 days of shooting)</p>
+              <div className="space-y-4">
+                {result.shoot_schedule.map((day, i) => (
+                  <div key={i} className="bg-gray-50 p-3 rounded border border-gray-100">
+                    <h3 className="font-bold text-blue-800 mb-2">Day {day.day}</h3>
+                    <ul className="list-disc pl-5 text-gray-700">
+                      {day.scenes.map((sceneName, j) => (
+                        <li key={j}>{sceneName}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Characters Card */}
           {Object.keys(result.characters || {}).length > 0 && (
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
