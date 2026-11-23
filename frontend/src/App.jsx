@@ -59,12 +59,17 @@ export default function App() {
     const formData = new FormData();
     formData.append("file", file);
 
-    try {
+       try {
       const response = await fetch('/upload', {
         method: 'POST',
         body: formData
       });
-      const data = await response.json();
+      
+      const text = await response.text();
+      if (!text) throw new Error("Server returned an empty response. Check the backend terminal.");
+      
+      const data = JSON.parse(text);
+      
       if (!response.ok) throw new Error(data.detail || 'Failed to upload file');
       setResult(data);
     } catch (err) {
@@ -73,6 +78,7 @@ export default function App() {
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+    
   };
 
   const handleAiAnalyze = async () => {

@@ -8,7 +8,9 @@ export default defineConfig({
    proxy: {
   '/analyze': 'http://127.0.0.1:8000',
   '/ai-summary': 'http://127.0.0.1:8000',
+  '/upload': 'http://127.0.0.1:8000',
   '/health': 'http://127.0.0.1:8000'
 }
+
   }
 })
