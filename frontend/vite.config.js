@@ -5,12 +5,13 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-   proxy: {
-  '/analyze': 'http://127.0.0.1:8000',
-  '/ai-summary': 'http://127.0.0.1:8000',
-  '/upload': 'http://127.0.0.1:8000',
-  '/health': 'http://127.0.0.1:8000'
-}
-
+    proxy: {
+      '/analyze': 'http://127.0.0.1:8000',
+      '/ai-summary': 'http://127.0.0.1:8000',
+      '/upload': 'http://127.0.0.1:8000',
+      '/health': 'http://127.0.0.1:8000',
+      '/signup': 'http://127.0.0.1:8000',
+      '/login': 'http://127.0.0.1:8000'
+    }
   }
 })
