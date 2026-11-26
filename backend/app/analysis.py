@@ -30,7 +30,9 @@ from main import (
     get_emotion_balance,
     get_budget_and_audience,
     generate_shoot_schedule,
+    is_character_cue
 )
+
 
 import io
 from pypdf import PdfReader
