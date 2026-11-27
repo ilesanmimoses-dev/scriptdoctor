@@ -18,7 +18,8 @@ export default defineConfig({
       '/explain': 'http://127.0.0.1:8000',
       '/coverage': 'http://127.0.0.1:8000',
       '/report': 'http://127.0.0.1:8000',
-      '/admin-reports': 'http://127.0.0.1:8000'
+      '/admin-reports': 'http://127.0.0.1:8000',
+      '/compare': 'http://127.0.0.1:8000'
     }
   }
 })

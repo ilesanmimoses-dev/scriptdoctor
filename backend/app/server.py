@@ -50,6 +50,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 class ScriptInput(BaseModel):
     script: str
 
+class CompareInput(BaseModel):
+    draft_a: str
+    draft_b: str
+
 @app.post("/signup", response_model=Token)
 def signup(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
@@ -119,9 +123,7 @@ def explain_script_scene_by_scene(payload: ScriptInput, current_user: User = Dep
         for line in sc["lines"]:
             if is_character_cue(line):
                 people.append(line.strip())
-        
         who = ", ".join(people) if people else "No one speaks in this scene."
-        
         fallback.append({
             "scene_number": i + 1,
             "location": f"{sc['interior']}. {sc['location']} - {sc['time']}",
@@ -135,6 +137,27 @@ def coverage_report(payload: ScriptInput, current_user: User = Depends(get_curre
     if not payload.script.strip(): raise HTTPException(status_code=400, detail="Script is empty.")
     report = generate_coverage_report(payload.script)
     return {"coverage": report}
+
+@app.post("/compare")
+def compare_drafts(payload: CompareInput, current_user: User = Depends(get_current_user)):
+    def get_score(text):
+        lines = text.splitlines()
+        errors = find_errors(lines)
+        score, tier = calculate_score(errors)
+        return score, tier
+
+    score_a, tier_a = get_score(payload.draft_a)
+    score_b, tier_b = get_score(payload.draft_b)
+
+    winner = "Tie"
+    if score_b > score_a: winner = "Draft B"
+    elif score_a > score_b: winner = "Draft A"
+
+    return {
+        "draft_a": {"score": score_a, "tier": tier_a},
+        "draft_b": {"score": score_b, "tier": tier_b},
+        "winner": winner
+    }
 
 @app.get("/history")
 def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -153,7 +176,6 @@ def submit_report(payload: dict, db: Session = Depends(get_db), current_user: Us
     message = payload.get("message")
     if not message or not message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
-    
     new_report = Report(user_id=current_user.id, message=message)
     db.add(new_report)
     db.commit()
@@ -221,3 +243,4 @@ def health(): return {"status": "ok"}
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
+    

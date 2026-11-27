@@ -35,6 +35,11 @@ export default function App() {
   const [reportMessage, setReportMessage] = useState("");
   const [reportStatus, setReportStatus] = useState(null);
 
+  const [draftA, setDraftA] = useState("");
+  const [draftB, setDraftB] = useState("");
+  const [compareResult, setCompareResult] = useState(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+
   useEffect(() => {
     if (!token) return;
     fetch('/history', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -125,6 +130,24 @@ export default function App() {
       if (!response.ok) throw new Error(data.detail || 'Failed');
       setCoverageResult(data.coverage);
     } catch (err) { setError(err.message); } finally { setCoverageLoading(false); }
+  };
+
+  const handleCompareDrafts = async () => {
+    if (!draftA.trim() || !draftB.trim()) {
+      setError("Please paste a script in both Draft A and Draft B.");
+      return;
+    }
+    setCompareLoading(true); setError(null); setCompareResult(null); setActiveTab('compare');
+    try {
+      const response = await fetch('/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ draft_a: draftA, draft_b: draftB })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Failed to compare');
+      setCompareResult(data);
+    } catch (err) { setError(err.message); } finally { setCompareLoading(false); }
   };
 
   const handleFileUpload = async (event) => {
@@ -306,6 +329,7 @@ export default function App() {
           <button onClick={handleGenerateSchedule} disabled={loading || coverageLoading} className="px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1 min-w-[150px]">Prepare Schedule</button>
           <button onClick={handleExplainScript} disabled={loading || coverageLoading} className="px-4 py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1 min-w-[150px]">Explain Script</button>
           <button onClick={handleCoverageReport} disabled={loading || coverageLoading} className="px-4 py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1 min-w-[150px]">Coverage Report</button>
+          <button onClick={() => { setActiveTab('compare'); setCompareResult(null); }} className="px-4 py-3 bg-pink-600 hover:bg-pink-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1 min-w-[150px]">Compare Drafts</button>
         </div>
 
         <div className="flex gap-4 mb-8">
@@ -396,6 +420,60 @@ export default function App() {
               </div>
             ) : (
               <p className="text-gray-500">Click the button to generate your report.</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'compare' && (
+          <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
+            <h2 className="text-2xl font-bold mb-4 text-pink-800">Compare Drafts</h2>
+            <p className="text-gray-600 mb-6">Paste two versions of your script to see which one scores higher.</p>
+            
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              <div>
+                <label className="block font-bold mb-2">Draft A (Old)</label>
+                <textarea 
+                  value={draftA} 
+                  onChange={(e) => setDraftA(e.target.value)}
+                  className="w-full h-48 p-3 border border-gray-300 rounded-lg font-mono text-sm"
+                  placeholder="Paste older version here..."
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-2">Draft B (New)</label>
+                <textarea 
+                  value={draftB} 
+                  onChange={(e) => setDraftB(e.target.value)}
+                  className="w-full h-48 p-3 border border-gray-300 rounded-lg font-mono text-sm"
+                  placeholder="Paste newer version here..."
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={handleCompareDrafts} 
+              disabled={compareLoading}
+              className="w-full px-8 py-3 bg-pink-600 hover:bg-pink-700 text-white font-bold rounded-lg shadow-md transition-colors mb-6"
+            >
+              {compareLoading ? 'Comparing...' : 'Compare Drafts'}
+            </button>
+
+            {compareResult && (
+              <div className="bg-pink-50 border border-pink-200 p-6 rounded-lg text-center">
+                <h3 className="text-2xl font-bold text-pink-900 mb-2">Winner: {compareResult.winner}</h3>
+                <div className="grid grid-cols-2 gap-4 mt-4">
+                  <div className="bg-white p-4 rounded shadow border border-gray-100">
+                    <p className="text-gray-500">Draft A</p>
+                    <p className="text-3xl font-bold">{compareResult.draft_a.score} / 100</p>
+                    <p className="text-gray-700 font-semibold">{compareResult.draft_a.tier}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded shadow border border-gray-100">
+                    <p className="text-gray-500">Draft B</p>
+                    <p className="text-3xl font-bold">{compareResult.draft_b.score} / 100</p>
+                    <p className="text-gray-700 font-semibold">{compareResult.draft_b.tier}</p>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         )}
