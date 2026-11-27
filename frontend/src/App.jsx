@@ -11,6 +11,7 @@ export default function App() {
   
   const [history, setHistory] = useState([]);
   const [adminStats, setAdminStats] = useState(null);
+  const [adminReports, setAdminReports] = useState(null);
 
   const [script, setScript] = useState(SAMPLE_SCRIPT);
   const [result, setResult] = useState(null);
@@ -29,6 +30,10 @@ export default function App() {
 
   const [coverageResult, setCoverageResult] = useState(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
+
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportMessage, setReportMessage] = useState("");
+  const [reportStatus, setReportStatus] = useState(null);
 
   useEffect(() => {
     if (!token) return;
@@ -58,7 +63,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    setToken(null); localStorage.removeItem('token'); setResult(null); setAiResult(null); setHistory([]); setAdminStats(null); setActiveTab(null);
+    setToken(null); localStorage.removeItem('token'); setResult(null); setAiResult(null); setHistory([]); setAdminStats(null); setActiveTab(null); setAdminReports(null);
   };
 
   const handleAnalyze = async () => {
@@ -155,7 +160,35 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail);
       setAdminStats(data);
+      setAdminReports(null);
     } catch (err) { alert(err.message); }
+  };
+
+  const handleAdminReports = async () => {
+    try {
+      const res = await fetch('/admin-reports', { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail);
+      setAdminReports(data);
+    } catch (err) { alert(err.message); }
+  };
+
+  const handleSubmitReport = async (e) => {
+    e.preventDefault();
+    setReportStatus("Sending...");
+    try {
+      const response = await fetch('/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ message: reportMessage })
+      });
+      if (!response.ok) throw new Error("Failed to send");
+      setReportStatus("Sent successfully! Thank you.");
+      setReportMessage("");
+      setTimeout(() => { setShowReportModal(false); setReportStatus(null); }, 2000);
+    } catch (err) {
+      setReportStatus("Error: " + err.message);
+    }
   };
 
   const getTierColor = (tier) => {
@@ -181,20 +214,43 @@ export default function App() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 font-sans text-gray-900 bg-gray-50 min-h-screen flex gap-8">
+    <div className="max-w-6xl mx-auto px-4 py-8 font-sans text-gray-900 bg-gray-50 min-h-screen flex gap-8 relative">
       
-      <div className="w-64 flex-shrink-0 bg-white p-4 rounded-lg shadow-sm border border-gray-200 h-fit">
-        <h2 className="text-lg font-bold mb-4 text-gray-800">Your History</h2>
-        {history.length === 0 ? <p className="text-sm text-gray-500">No scripts analyzed yet.</p> : (
-          <ul className="space-y-2 max-h-96 overflow-y-auto">
-            {history.map((item) => (
-              <li key={item.id} className="p-2 bg-gray-50 rounded border border-gray-100 text-sm hover:bg-gray-100 cursor-pointer">
-                <div className="font-semibold text-gray-800">Script #{item.id}</div>
-                <div className="flex justify-between text-gray-500 mt-1"><span>Score: {item.score}</span><span className={`font-bold ${getTierColor(item.tier)}`}>{item.tier}</span></div>
-              </li>
-            ))}
-          </ul>
-        )}
+      {showReportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h2 className="text-2xl font-bold mb-4">Send a Report</h2>
+            <p className="text-gray-600 mb-4 text-sm">Found a bug? Have a suggestion? Let us know!</p>
+            <form onSubmit={handleSubmitReport}>
+              <textarea value={reportMessage} onChange={(e) => setReportMessage(e.target.value)} required className="w-full h-32 p-3 border rounded-lg mb-4" placeholder="Describe your issue or suggestion here..." />
+              {reportStatus && <p className="text-sm text-blue-600 mb-2">{reportStatus}</p>}
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setShowReportModal(false)} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Send Report</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className="w-64 flex-shrink-0 bg-white p-4 rounded-lg shadow-sm border border-gray-200 h-fit flex flex-col gap-4">
+        <div>
+          <h2 className="text-lg font-bold mb-4 text-gray-800">Your History</h2>
+          {history.length === 0 ? <p className="text-sm text-gray-500">No scripts analyzed yet.</p> : (
+            <ul className="space-y-2 max-h-64 overflow-y-auto">
+              {history.map((item) => (
+                <li key={item.id} className="p-2 bg-gray-50 rounded border border-gray-100 text-sm hover:bg-gray-100 cursor-pointer">
+                  <div className="font-semibold text-gray-800">Script #{item.id}</div>
+                  <div className="flex justify-between text-gray-500 mt-1"><span>Score: {item.score}</span><span className={`font-bold ${getTierColor(item.tier)}`}>{item.tier}</span></div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        
+        <button onClick={() => setShowReportModal(true)} className="mt-4 w-full py-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-700 font-semibold rounded text-sm transition-colors">
+          ⚠️ Report a Problem
+        </button>
       </div>
 
       <div className="flex-1">
@@ -208,11 +264,36 @@ export default function App() {
 
         {adminStats && (
           <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-lg mb-8 shadow-sm">
-            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold text-yellow-800">Admin Dashboard</h2><button onClick={() => setAdminStats(null)} className="text-gray-500 hover:text-black font-bold">✕</button></div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-yellow-800">Admin Dashboard</h2>
+              <button onClick={() => { setAdminStats(null); setAdminReports(null); }} className="text-gray-500 hover:text-black font-bold">✕</button>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="bg-white p-4 rounded shadow border border-gray-100"><p className="text-gray-500 text-sm">Total Users</p><p className="text-2xl font-bold text-gray-800">{adminStats.total_users}</p></div>
               <div className="bg-white p-4 rounded shadow border border-gray-100"><p className="text-gray-500 text-sm">Scripts Analyzed</p><p className="text-2xl font-bold text-gray-800">{adminStats.total_scripts}</p></div>
             </div>
+
+            <button onClick={handleAdminReports} className="px-4 py-2 bg-yellow-600 text-white rounded text-sm font-semibold mb-4">View User Reports</button>
+
+            {adminReports && (
+              <div className="bg-white rounded border border-yellow-100 p-4 max-h-64 overflow-y-auto">
+                <h3 className="font-bold text-gray-800 mb-2">User Reports Inbox</h3>
+                {adminReports.length === 0 ? <p className="text-sm text-gray-500">No reports yet.</p> : (
+                  <ul className="space-y-2">
+                    {adminReports.map((r) => (
+                      <li key={r.id} className="bg-gray-50 p-3 rounded border border-gray-200 text-sm">
+                        <div className="flex justify-between font-semibold text-gray-700 mb-1">
+                          <span>{r.email}</span>
+                          <span className="text-xs bg-gray-200 px-2 py-1 rounded">{r.status}</span>
+                        </div>
+                        <p className="text-gray-600">{r.message}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -234,7 +315,6 @@ export default function App() {
 
         {error && <div className="p-4 mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg"><strong>Error:</strong> {error}</div>}
 
-        {/* ANALYZE TAB */}
         {activeTab === 'analyze' && result && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-lg shadow-sm border border-indigo-200 border-l-4 border-l-indigo-500 mb-8">
@@ -242,19 +322,16 @@ export default function App() {
               <button onClick={handleAiAnalyze} disabled={aiLoading} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded shadow transition-colors">{aiLoading ? 'AI is reading...' : 'Get AI Analysis'}</button>
               {aiResult && <div className="mt-6 p-5 bg-indigo-50 border border-indigo-100 rounded text-gray-800 text-sm whitespace-pre-wrap font-sans">{aiResult}</div>}
             </div>
-
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
               <h2 className="text-xl font-bold mb-4">Score</h2>
               <p className={`text-4xl font-extrabold ${getTierColor(result.tier)} mb-2`}>{result.score} / 100</p>
               <p className="text-gray-700 mb-1"><strong>Rating:</strong> {result.tier}</p>
             </div>
-
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
               <h2 className="text-xl font-bold mb-4">Content Rating & Mood</h2>
               <p className="text-gray-700 mb-2"><strong>Age Rating:</strong> {result.content_rating}</p>
               <p className="text-gray-700"><strong>Mood:</strong> {result.emotion_balance.mood}</p>
             </div>
-
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
               <h2 className="text-xl font-bold mb-4">Errors ({result.errors.length})</h2>
               <ul className="space-y-4">
@@ -264,7 +341,6 @@ export default function App() {
           </div>
         )}
 
-        {/* SCHEDULE TAB */}
         {activeTab === 'schedule' && (
           <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-2xl font-bold mb-4">Prepare Schedule</h2>
@@ -273,7 +349,6 @@ export default function App() {
               <span className="text-lg text-gray-700">Days</span>
             </div>
             <button onClick={handleGenerateSchedule} className="w-full px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-md transition-colors">Generate {scheduleDays}-Day Schedule</button>
-
             {generatedSchedule && (
               <div className="mt-8 border-t pt-6">
                 <div className="space-y-4">
@@ -289,24 +364,19 @@ export default function App() {
           </div>
         )}
 
-        {/* EXPLAIN TAB */}
         {activeTab === 'explain' && explanationScenes && explanationScenes.length > 0 && (
           <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-2xl font-bold mb-4 text-teal-800">Scene-by-Scene Explanation</h2>
-            
             <div className="bg-teal-50 border border-teal-100 p-6 rounded-lg mb-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-xl text-teal-900">Scene {explanationScenes[currentSceneIndex].scene_number}</h3>
                 <span className="text-sm font-semibold text-teal-600 bg-teal-100 px-3 py-1 rounded-full">{currentSceneIndex + 1} of {explanationScenes.length}</span>
               </div>
-              
               <p className="text-sm text-teal-700 mb-4">{explanationScenes[currentSceneIndex].location}</p>
-              
               <div className="bg-white p-4 rounded mb-4 shadow-sm">
                 <p className="text-gray-800 mb-2"><strong>Who is in it:</strong> {explanationScenes[currentSceneIndex].who_is_in_it}</p>
                 <p className="text-gray-800"><strong>What happens:</strong> {explanationScenes[currentSceneIndex].what_happens}</p>
               </div>
-              
               <div className="flex justify-between mt-6">
                 <button onClick={() => setCurrentSceneIndex(currentSceneIndex - 1)} disabled={currentSceneIndex === 0} className="px-6 py-2 bg-teal-700 hover:bg-teal-800 text-white font-semibold rounded shadow disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors">← Previous Scene</button>
                 <button onClick={() => setCurrentSceneIndex(currentSceneIndex + 1)} disabled={currentSceneIndex === explanationScenes.length - 1} className="px-6 py-2 bg-teal-700 hover:bg-teal-800 text-white font-semibold rounded shadow disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors">Next Scene →</button>
@@ -315,7 +385,6 @@ export default function App() {
           </div>
         )}
 
-        {/* COVERAGE TAB */}
         {activeTab === 'coverage' && (
           <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-2xl font-bold mb-4 text-yellow-800">Professional Coverage Report</h2>

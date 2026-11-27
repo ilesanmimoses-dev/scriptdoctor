@@ -26,5 +26,12 @@ class Script(Base):
     score = Column(Integer)
     tier = Column(String)
 
+class Report(Base):
+    __tablename__ = "reports"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    message = Column(Text)
+    status = Column(String, default="Received")
+
 # Create the tables
 Base.metadata.create_all(bind=engine)

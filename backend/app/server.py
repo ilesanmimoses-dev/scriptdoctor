@@ -17,7 +17,7 @@ from analysis import (
 )
 from ai.client import analyze_script_with_ai, generate_coverage_report
 
-from database import SessionLocal, User, Script, engine, Base
+from database import SessionLocal, User, Script, Report, engine, Base
 from auth import get_password_hash, verify_password, create_access_token, SECRET_KEY, ALGORITHM
 from schemas import UserCreate, UserLogin, Token
 
@@ -148,6 +148,35 @@ def get_admin_stats(db: Session = Depends(get_db), current_user: User = Depends(
         raise HTTPException(status_code=403, detail="Not authorized as admin")
     return {"total_users": db.query(User).count(), "total_scripts": db.query(Script).count()}
 
+@app.post("/report")
+def submit_report(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    message = payload.get("message")
+    if not message or not message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    
+    new_report = Report(user_id=current_user.id, message=message)
+    db.add(new_report)
+    db.commit()
+    return {"status": "success", "message": "Your report has been submitted."}
+
+@app.get("/admin-reports")
+def get_admin_reports(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    ADMIN_EMAIL = "test@test.com" 
+    if current_user.email != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Not authorized as admin")
+    
+    reports = db.query(Report).order_by(Report.id.desc()).all()
+    result = []
+    for r in reports:
+        user = db.query(User).filter(User.id == r.user_id).first()
+        result.append({
+            "id": r.id,
+            "email": user.email if user else "Unknown",
+            "message": r.message,
+            "status": r.status
+        })
+    return result
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
@@ -182,7 +211,6 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
 def ai_summary(payload: ScriptInput, current_user: User = Depends(get_current_user)):
     return {"ai_analysis": analyze_script_with_ai(payload.script)}
 
-# Serve the React app in production
 DIST_DIR = FRONTEND_DIR / "dist"
 if DIST_DIR.exists():
     app.mount("/", StaticFiles(directory=str(DIST_DIR), html=True), name="static")
@@ -193,4 +221,3 @@ def health(): return {"status": "ok"}
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
-    
