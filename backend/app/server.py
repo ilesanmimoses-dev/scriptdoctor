@@ -1,4 +1,4 @@
-"""ScriptScope FastAPI backend with User Accounts and PRD Workflows."""
+"""ScriptScope FastAPI backend."""
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, status
 from fastapi.responses import FileResponse
@@ -13,11 +13,9 @@ from analysis import (
     calculate_score, choose_comment, parse_scenes, detect_language, count_speeches,
     dialogue_ratio, estimate_length, explain_simply, find_props_and_costumes,
     get_content_rating, get_emotion_balance, get_budget_and_audience,
-    generate_shoot_schedule, extract_text_from_file,
-    is_character_cue
-    
+    generate_shoot_schedule, extract_text_from_file, is_character_cue
 )
-from ai.client import analyze_script_with_ai
+from ai.client import analyze_script_with_ai, generate_coverage_report
 
 from database import SessionLocal, User, Script, engine, Base
 from auth import get_password_hash, verify_password, create_access_token, SECRET_KEY, ALGORITHM
@@ -117,7 +115,6 @@ def explain_script_scene_by_scene(payload: ScriptInput, current_user: User = Dep
     
     fallback = []
     for i, sc in enumerate(scenes):
-        # Find who is in the scene by looking at the lines
         people = []
         for line in sc["lines"]:
             if is_character_cue(line):
@@ -132,6 +129,12 @@ def explain_script_scene_by_scene(payload: ScriptInput, current_user: User = Dep
             "what_happens": f"This scene takes place in the {sc['location'].lower()} and has {sc['word_count']} words of action and dialogue." 
         })
     return {"scenes": fallback}
+
+@app.post("/coverage")
+def coverage_report(payload: ScriptInput, current_user: User = Depends(get_current_user)):
+    if not payload.script.strip(): raise HTTPException(status_code=400, detail="Script is empty.")
+    report = generate_coverage_report(payload.script)
+    return {"coverage": report}
 
 @app.get("/history")
 def get_history(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -179,8 +182,10 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
 def ai_summary(payload: ScriptInput, current_user: User = Depends(get_current_user)):
     return {"ai_analysis": analyze_script_with_ai(payload.script)}
 
-@app.get("/")
-def index(): return FileResponse(FRONTEND_DIR / "index.html")
+# Serve the React app in production
+DIST_DIR = FRONTEND_DIR / "dist"
+if DIST_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(DIST_DIR), html=True), name="static")
 
 @app.get("/health")
 def health(): return {"status": "ok"}
@@ -188,4 +193,4 @@ def health(): return {"status": "ok"}
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
-
+    

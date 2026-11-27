@@ -43,3 +43,37 @@ def analyze_script_with_ai(script_text: str) -> str:
         return response.text
     except Exception as e:
         return f"AI Error: {str(e)}"
+
+
+def generate_coverage_report(script_text: str) -> str:
+    """Generate an industry-standard coverage report."""
+    if client is None:
+        return "Error: GEMINI_API_KEY is not set."
+    
+    prompt = f"""
+    You are an expert studio script reader. Write a professional Coverage Report for the screenplay below.
+    Use this exact format:
+    
+    LOGLINE: (One sentence summarizing the story)
+    
+    SYNOPSIS: (A 1-paragraph summary of the plot)
+    
+    STRENGTHS: (Bullet points of what works well)
+    
+    WEAKNESSES: (Bullet points of what needs improvement)
+    
+    VERDICT: (Choose exactly one: PASS, CONSIDER, or RECOMMEND)
+    
+    SCREENPLAY:
+    {script_text}
+    """
+    
+    try:
+        response = client.models.generate_content(
+            model='gemini-3.8-flash',
+            contents=prompt,
+        )
+        return response.text
+    except Exception as e:
+        return f"AI Error: {str(e)}"
+    

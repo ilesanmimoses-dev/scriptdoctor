@@ -27,6 +27,9 @@ export default function App() {
   const [explanationScenes, setExplanationScenes] = useState(null);
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
 
+  const [coverageResult, setCoverageResult] = useState(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+
   useEffect(() => {
     if (!token) return;
     fetch('/history', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -102,6 +105,21 @@ export default function App() {
       if (!response.ok) throw new Error(data.detail || 'Failed');
       setExplanationScenes(data.scenes);
     } catch (err) { setError(err.message); } finally { setLoading(false); }
+  };
+
+  const handleCoverageReport = async () => {
+    if (!script.trim()) return;
+    setCoverageLoading(true); setCoverageResult(null); setActiveTab('coverage');
+    try {
+      const response = await fetch('/coverage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ script })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Failed');
+      setCoverageResult(data.coverage);
+    } catch (err) { setError(err.message); } finally { setCoverageLoading(false); }
   };
 
   const handleFileUpload = async (event) => {
@@ -202,10 +220,11 @@ export default function App() {
           <textarea value={script} onChange={(e) => setScript(e.target.value)} className="w-full h-64 p-4 border border-gray-300 rounded-lg font-mono text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y" />
         </div>
 
-        <div className="flex gap-4 mb-8">
-          <button onClick={handleAnalyze} disabled={loading} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1">Analyze Script</button>
-          <button onClick={handleGenerateSchedule} disabled={loading} className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1">Prepare Schedule</button>
-          <button onClick={handleExplainScript} disabled={loading} className="px-6 py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1">Explain Script</button>
+        <div className="flex flex-wrap gap-4 mb-8">
+          <button onClick={handleAnalyze} disabled={loading || coverageLoading} className="px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1 min-w-[150px]">Analyze Script</button>
+          <button onClick={handleGenerateSchedule} disabled={loading || coverageLoading} className="px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1 min-w-[150px]">Prepare Schedule</button>
+          <button onClick={handleExplainScript} disabled={loading || coverageLoading} className="px-4 py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1 min-w-[150px]">Explain Script</button>
+          <button onClick={handleCoverageReport} disabled={loading || coverageLoading} className="px-4 py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 text-white font-semibold rounded-lg shadow transition-colors flex-1 min-w-[150px]">Coverage Report</button>
         </div>
 
         <div className="flex gap-4 mb-8">
@@ -271,30 +290,43 @@ export default function App() {
         )}
 
         {/* EXPLAIN TAB */}
-        {activeTab === 'explain' && explanationScenes && (
+        {activeTab === 'explain' && explanationScenes && explanationScenes.length > 0 && (
           <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-2xl font-bold mb-4 text-teal-800">Scene-by-Scene Explanation</h2>
             
-            {explanationScenes.length > 0 && (
-              <div className="bg-teal-50 border border-teal-100 p-6 rounded-lg mb-6">
-                <h3 className="font-bold text-teal-900 mb-2">Scene {explanationScenes[currentSceneIndex].scene_number}</h3>
-                <p className="text-sm text-teal-700 mb-2">{explanationScenes[currentSceneIndex].location}</p>
-                <p className="text-gray-800 mb-4"><strong>Who is in it:</strong> {explanationScenes[currentSceneIndex].who_is_in_it}</p>
-                <p className="text-gray-800"><strong>What happens:</strong> {explanationScenes[currentSceneIndex].what_happens}</p>
-                
-                <div className="flex justify-between mt-6">
-                  <button 
-                    onClick={() => setCurrentSceneIndex(prev => Math.max(0, prev - 1))}
-                    disabled={currentSceneIndex === 0}
-                    className="px-4 py-2 bg-teal-200 text-teal-900 rounded disabled:opacity-50"
-                  >Previous Scene</button>
-                  <button 
-                    onClick={() => setCurrentSceneIndex(prev => Math.min(explanationScenes.length - 1, prev + 1))}
-                    disabled={currentSceneIndex === explanationScenes.length - 1}
-                    className="px-4 py-2 bg-teal-600 text-white rounded shadow disabled:opacity-50"
-                  >Next Scene</button>
-                </div>
+            <div className="bg-teal-50 border border-teal-100 p-6 rounded-lg mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-xl text-teal-900">Scene {explanationScenes[currentSceneIndex].scene_number}</h3>
+                <span className="text-sm font-semibold text-teal-600 bg-teal-100 px-3 py-1 rounded-full">{currentSceneIndex + 1} of {explanationScenes.length}</span>
               </div>
+              
+              <p className="text-sm text-teal-700 mb-4">{explanationScenes[currentSceneIndex].location}</p>
+              
+              <div className="bg-white p-4 rounded mb-4 shadow-sm">
+                <p className="text-gray-800 mb-2"><strong>Who is in it:</strong> {explanationScenes[currentSceneIndex].who_is_in_it}</p>
+                <p className="text-gray-800"><strong>What happens:</strong> {explanationScenes[currentSceneIndex].what_happens}</p>
+              </div>
+              
+              <div className="flex justify-between mt-6">
+                <button onClick={() => setCurrentSceneIndex(currentSceneIndex - 1)} disabled={currentSceneIndex === 0} className="px-6 py-2 bg-teal-700 hover:bg-teal-800 text-white font-semibold rounded shadow disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors">← Previous Scene</button>
+                <button onClick={() => setCurrentSceneIndex(currentSceneIndex + 1)} disabled={currentSceneIndex === explanationScenes.length - 1} className="px-6 py-2 bg-teal-700 hover:bg-teal-800 text-white font-semibold rounded shadow disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors">Next Scene →</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* COVERAGE TAB */}
+        {activeTab === 'coverage' && (
+          <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
+            <h2 className="text-2xl font-bold mb-4 text-yellow-800">Professional Coverage Report</h2>
+            {coverageLoading ? (
+              <p className="text-gray-500 italic">The AI studio reader is analyzing your script...</p>
+            ) : coverageResult ? (
+              <div className="bg-yellow-50 border border-yellow-100 p-6 rounded-lg whitespace-pre-wrap font-sans text-gray-800">
+                {coverageResult}
+              </div>
+            ) : (
+              <p className="text-gray-500">Click the button to generate your report.</p>
             )}
           </div>
         )}

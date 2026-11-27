@@ -15,7 +15,8 @@ export default defineConfig({
       '/history': 'http://127.0.0.1:8000',
       '/admin-stats': 'http://127.0.0.1:8000',
       '/schedule': 'http://127.0.0.1:8000',
-      '/explain': 'http://127.0.0.1:8000'
+      '/explain': 'http://127.0.0.1:8000',
+      '/coverage': 'http://127.0.0.1:8000'
     }
   }
 })
